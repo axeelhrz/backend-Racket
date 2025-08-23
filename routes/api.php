@@ -11,6 +11,18 @@ use App\Http\Controllers\SportParameterController;
 use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\QuickRegistrationController;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+
+
+Route::get('/db-check', function () {
+  try {
+    $r = DB::select('SELECT 1 AS ok');
+    return response()->json(['db' => 'ok', 'result' => $r[0]->ok ?? null]);
+  } catch (\Throwable $e) {
+    return response()->json(['db' => 'fail', 'error' => $e->getMessage()], 500);
+  }
+});
 
 // Test endpoint for debugging
 Route::get('/test', function () {
