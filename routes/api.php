@@ -12,6 +12,7 @@ use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\QuickRegistrationController;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 
 Route::get('/db-check', function () {
@@ -143,4 +144,55 @@ Route::middleware('auth:sanctum')->group(function () {
 // Health check endpoint
 Route::get('/health', function () {
     return response()->json(['status' => 'ok', 'timestamp' => now()]);
+});
+
+// ===== RUTAS DE DIAGNÓSTICO =====
+
+// 1) eco para confirmar que la request llega y vemos el body
+Route::post('/echo-registro', function (Request $req) {
+    return response()->json([
+        'ok' => true,
+        'received' => $req->all(),
+        'method' => $req->method(),
+    ]);
+});
+
+// 2) versión mínima y robusta (NO usa tus modelos). Crea tabla si falta, inserta y maneja errores.
+Route::post('/registro-rapido2', function (Request $req) {
+    try {
+        $data = $req->validate([
+            'name' => 'required|string|max:120',
+            'email' => 'required|email|max:190',
+            'password' => 'required|string|min:6',
+        ]);
+
+        DB::statement("
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(120) NOT NULL,
+                email VARCHAR(190) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        try {
+            DB::insert(
+                'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+                [$data['name'], $data['email'], Hash::make($data['password'])]
+            );
+        } catch (\Throwable $e) {
+            if (str_contains($e->getMessage(), '23000')) {
+                return response()->json(['ok'=>false,'error'=>'EMAIL_TAKEN'], 409);
+            }
+            throw $e;
+        }
+
+        return response()->json(['ok'=>true], 201);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json(['ok'=>false,'error'=>'VALIDATION','messages'=>$e->errors()], 422);
+    } catch (\Throwable $e) {
+        return response()->json(['ok'=>false,'error'=>'SERVER','message'=>$e->getMessage()], 500);
+    }
 });
