@@ -12,7 +12,6 @@ use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\QuickRegistrationController;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
 
 
 Route::get('/db-check', function () {
