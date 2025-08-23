@@ -14,32 +14,101 @@ use App\Http\Controllers\QuickRegistrationController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
-
-Route::get('/db-check', function () {
-  try {
-    $r = DB::select('SELECT 1 AS ok');
-    return response()->json(['db' => 'ok', 'result' => $r[0]->ok ?? null]);
-  } catch (\Throwable $e) {
-    return response()->json(['db' => 'fail', 'error' => $e->getMessage()], 500);
-  }
+// Health check endpoint - should be first
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok', 
+        'timestamp' => now(),
+        'app' => config('app.name'),
+        'version' => '1.0.0'
+    ]);
 });
 
-// Test endpoint for debugging
+// Database check endpoint with better error handling
+Route::get('/db-check', function () {
+    try {
+        // Test database connection
+        $pdo = DB::connection()->getPdo();
+        
+        // Test a simple query
+        $result = DB::select('SELECT 1 AS test');
+        
+        return response()->json([
+            'status' => 'ok',
+            'database' => 'connected',
+            'driver' => config('database.default'),
+            'test_query' => $result[0]->test ?? null,
+            'timestamp' => now()
+        ]);
+    } catch (\PDOException $e) {
+        return response()->json([
+            'status' => 'error',
+            'database' => 'connection_failed',
+            'error' => 'Database connection failed',
+            'message' => $e->getMessage(),
+            'timestamp' => now()
+        ], 500);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'error',
+            'database' => 'query_failed',
+            'error' => 'Database query failed',
+            'message' => $e->getMessage(),
+            'timestamp' => now()
+        ], 500);
+    }
+});
+
+// Test endpoint for debugging CORS
 Route::get('/test', function () {
     return response()->json([
         'message' => 'API is working',
         'timestamp' => now(),
-        'cors_test' => 'success'
+        'cors_test' => 'success',
+        'origin' => request()->header('Origin'),
+        'user_agent' => request()->header('User-Agent')
+    ]);
+});
+
+// Test CORS with POST
+Route::post('/test-cors', function (Request $request) {
+    return response()->json([
+        'message' => 'CORS POST test successful',
+        'data' => $request->all(),
+        'headers' => [
+            'origin' => $request->header('Origin'),
+            'content_type' => $request->header('Content-Type'),
+            'accept' => $request->header('Accept')
+        ],
+        'timestamp' => now()
     ]);
 });
 
 // Test registration endpoint without CSRF for debugging
 Route::post('/test-register', function (Request $request) {
-    return response()->json([
-        'message' => 'Test registration endpoint working',
-        'data' => $request->all(),
-        'timestamp' => now()
-    ]);
+    try {
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'password' => 'required|string|min:6'
+        ]);
+
+        return response()->json([
+            'message' => 'Test registration endpoint working',
+            'data' => $data,
+            'timestamp' => now()
+        ]);
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'message' => 'Validation failed',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'message' => 'Server error',
+            'error' => $e->getMessage()
+        ], 500);
+    }
 });
 
 // Quick Registration routes (no authentication required)
@@ -141,58 +210,113 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
-// Health check endpoint
-Route::get('/health', function () {
-    return response()->json(['status' => 'ok', 'timestamp' => now()]);
-});
+// ===== DIAGNOSTIC ROUTES =====
 
-// ===== RUTAS DE DIAGNÓSTICO =====
-
-// 1) eco para confirmar que la request llega y vemos el body
+// Echo endpoint for debugging requests
 Route::post('/echo-registro', function (Request $req) {
     return response()->json([
-        'ok' => true,
-        'received' => $req->all(),
+        'success' => true,
+        'message' => 'Echo endpoint working',
+        'received_data' => $req->all(),
         'method' => $req->method(),
+        'headers' => [
+            'content_type' => $req->header('Content-Type'),
+            'accept' => $req->header('Accept'),
+            'origin' => $req->header('Origin'),
+            'user_agent' => $req->header('User-Agent')
+        ],
+        'timestamp' => now()
     ]);
 });
 
-// 2) versión mínima y robusta (NO usa tus modelos). Crea tabla si falta, inserta y maneja errores.
+// Simplified registration endpoint for testing
 Route::post('/registro-rapido2', function (Request $req) {
     try {
+        // Validate input
         $data = $req->validate([
             'name' => 'required|string|max:120',
             'email' => 'required|email|max:190',
             'password' => 'required|string|min:6',
         ]);
 
-        DB::statement("
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(120) NOT NULL,
-                email VARCHAR(190) NOT NULL UNIQUE,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
+        // Check if using SQLite or MySQL
+        $driver = config('database.default');
+        
+        if ($driver === 'sqlite') {
+            // SQLite version
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(120) NOT NULL,
+                    email VARCHAR(190) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            // MySQL version
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    email VARCHAR(190) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+        }
 
+        // Try to insert user
         try {
             DB::insert(
-                'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-                [$data['name'], $data['email'], Hash::make($data['password'])]
+                'INSERT INTO users (name, email, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+                [
+                    $data['name'], 
+                    $data['email'], 
+                    Hash::make($data['password']),
+                    now(),
+                    now()
+                ]
             );
         } catch (\Throwable $e) {
-            if (str_contains($e->getMessage(), '23000')) {
-                return response()->json(['ok'=>false,'error'=>'EMAIL_TAKEN'], 409);
+            // Check for duplicate email error
+            if (str_contains($e->getMessage(), 'UNIQUE constraint failed') || 
+                str_contains($e->getMessage(), 'Duplicate entry') ||
+                str_contains($e->getMessage(), '23000')) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'EMAIL_ALREADY_EXISTS',
+                    'message' => 'Este email ya está registrado'
+                ], 409);
             }
             throw $e;
         }
 
-        return response()->json(['ok'=>true], 201);
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuario registrado exitosamente',
+            'data' => [
+                'name' => $data['name'],
+                'email' => $data['email']
+            ]
+        ], 201);
 
     } catch (\Illuminate\Validation\ValidationException $e) {
-        return response()->json(['ok'=>false,'error'=>'VALIDATION','messages'=>$e->errors()], 422);
+        return response()->json([
+            'success' => false,
+            'error' => 'VALIDATION_ERROR',
+            'message' => 'Datos de entrada inválidos',
+            'errors' => $e->errors()
+        ], 422);
     } catch (\Throwable $e) {
-        return response()->json(['ok'=>false,'error'=>'SERVER','message'=>$e->getMessage()], 500);
+        return response()->json([
+            'success' => false,
+            'error' => 'SERVER_ERROR',
+            'message' => 'Error interno del servidor',
+            'details' => $e->getMessage(),
+            'database_driver' => config('database.default')
+        ], 500);
     }
 });

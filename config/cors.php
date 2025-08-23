@@ -25,8 +25,9 @@ return [
         'http://127.0.0.1:3000',
         'http://127.0.0.1:3002', // Added for current frontend port
         'https://involved-retailers-occasionally-macintosh.trycloudflare.com',
+        'https://raquet-power2-0.vercel.app', // Add your specific Vercel domain
+        'https://web-production-40b3.up.railway.app', // Add your Railway domain
         env('FRONTEND_URL', 'http://localhost:3000'),
-        // Agregar tu dominio de producción aquí
         env('APP_URL', 'http://localhost'),
     ],
 
@@ -37,6 +38,7 @@ return [
         'https://*.netlify.com',
         'https://*.ngrok-free.app',
         'https://*.trycloudflare.com',
+        'https://*.up.railway.app', // Add Railway pattern
         // Patrón para subdominios de tu dominio
         'https://*.tudominio.com',
     ],
@@ -48,6 +50,9 @@ return [
         'X-Requested-With',
         'X-CSRF-TOKEN',
         'X-XSRF-TOKEN',
+        'Origin',
+        'Access-Control-Request-Method',
+        'Access-Control-Request-Headers',
     ],
 
     'exposed_headers' => [
@@ -55,7 +60,7 @@ return [
         'X-XSRF-TOKEN',
     ],
 
-    'max_age' => 0,
+    'max_age' => 86400, // 24 hours
 
     'supports_credentials' => true,
 
