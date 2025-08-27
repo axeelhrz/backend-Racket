@@ -87,7 +87,6 @@ class ClubController extends Controller
             'founded_date' => 'nullable|date|before_or_equal:today',
             
             // Club statistics
-            'number_of_tables' => 'nullable|integer|min:0|max:50',
             'can_create_tournaments' => 'nullable|boolean',
             
             // Representative information
@@ -122,10 +121,11 @@ class ClubController extends Controller
             $validated['logo_path'] = $path;
         }
 
-        // Set defaults
+        // Set defaults to prevent null constraint violations
         $validated['status'] = $validated['status'] ?? 'active';
         $validated['country'] = $validated['country'] ?? 'Ecuador';
         $validated['can_create_tournaments'] = $validated['can_create_tournaments'] ?? false;
+        $validated['total_members'] = 0; // Always start with 0 members
 
         $club = Club::create($validated);
         $club->load('league');
@@ -178,7 +178,6 @@ class ClubController extends Controller
             'founded_date' => 'nullable|date|before_or_equal:today',
             
             // Club statistics
-            'number_of_tables' => 'nullable|integer|min:0|max:50',
             'can_create_tournaments' => 'nullable|boolean',
             
             // Representative information
@@ -309,7 +308,6 @@ class ClubController extends Controller
                 'name' => $club->name,
                 'total_members' => $club->total_members,
                 'average_ranking' => $club->average_ranking,
-                'number_of_tables' => $club->number_of_tables,
                 'can_create_tournaments' => $club->can_create_tournaments,
             ],
             'category_distribution' => $club->category_distribution,

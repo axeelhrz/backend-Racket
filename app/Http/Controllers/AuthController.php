@@ -112,7 +112,6 @@ class AuthController extends Controller
                     'google_maps_url' => 'nullable|url|max:500',
                     'description' => 'nullable|string|max:1000',
                     'founded_date' => 'nullable|date|before_or_equal:today',
-                    'number_of_tables' => 'nullable|integer|min:0|max:50',
                     'can_create_tournaments' => 'nullable|boolean',
                     
                     // Representative information
@@ -248,7 +247,7 @@ class AuthController extends Controller
                     'status' => 'active',
                     'country' => $user->country,
                     
-                    // Additional club fields
+                    // Additional club fields with explicit defaults
                     'ruc' => $validatedData['ruc'] ?? null,
                     'province' => $validatedData['province'] ?? null,
                     'latitude' => $validatedData['latitude'] ?? null,
@@ -256,8 +255,10 @@ class AuthController extends Controller
                     'google_maps_url' => $validatedData['google_maps_url'] ?? null,
                     'description' => $validatedData['description'] ?? null,
                     'founded_date' => $validatedData['founded_date'] ?? null,
-                    'number_of_tables' => $validatedData['number_of_tables'] ?? null,
-                    'can_create_tournaments' => $validatedData['can_create_tournaments'] ?? false,
+                    
+                    // Critical fields that must have values
+                    'can_create_tournaments' => isset($validatedData['can_create_tournaments']) ? (bool)$validatedData['can_create_tournaments'] : false,
+                    'total_members' => 0,
                     
                     // Representative information
                     'representative_name' => $validatedData['representative_name'] ?? null,
@@ -280,7 +281,11 @@ class AuthController extends Controller
                     'admin3_email' => $validatedData['admin3_email'] ?? null,
                 ];
                 
-                $club = Club::create($clubData);
+                // Ensure no null values for critical fields
+                $clubData['can_create_tournaments'] = $clubData['can_create_tournaments'] ?? false;
+                $clubData['total_members'] = $clubData['total_members'] ?? 0;
+                
+                $club = Club::createSafely($clubData);
                 $user->update([
                     'roleable_id' => $club->id,
                     'roleable_type' => Club::class,

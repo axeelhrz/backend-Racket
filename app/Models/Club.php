@@ -29,7 +29,6 @@ class Club extends Model
         'logo_path',
         'status',
         'total_members',
-        'number_of_tables',
         'average_ranking',
         // Category counts
         'u800_count',
@@ -76,7 +75,6 @@ class Club extends Model
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
         'total_members' => 'integer',
-        'number_of_tables' => 'integer',
         'average_ranking' => 'decimal:2',
         'u800_count' => 'integer',
         'u900_count' => 'integer',
@@ -111,8 +109,31 @@ class Club extends Model
         'location_info'
     ];
 
+    protected $attributes = [
+        'can_create_tournaments' => false,
+        'total_members' => 0,
+        'u800_count' => 0,
+        'u900_count' => 0,
+        'u901_u1000_count' => 0,
+        'u1001_u1100_count' => 0,
+        'u1101_u1200_count' => 0,
+        'u1201_u1300_count' => 0,
+        'u1301_u1400_count' => 0,
+        'u1401_u1500_count' => 0,
+        'u1501_u1600_count' => 0,
+        'u1601_u1700_count' => 0,
+        'u1701_u1800_count' => 0,
+        'u1801_u1900_count' => 0,
+        'u1901_u2000_count' => 0,
+        'u2001_u2100_count' => 0,
+        'u2101_u2200_count' => 0,
+        'over_u2200_count' => 0,
+        'status' => 'active',
+        'country' => 'Ecuador',
+    ];
+
     /**
-     * Boot method to generate club code automatically.
+     * Boot method to generate club code automatically and set defaults.
      */
     protected static function boot()
     {
@@ -121,6 +142,32 @@ class Club extends Model
         static::creating(function ($model) {
             if (!$model->club_code) {
                 $model->club_code = self::generateClubCode();
+            }
+            
+            // Ensure critical fields have default values
+            if (is_null($model->can_create_tournaments)) {
+                $model->can_create_tournaments = false;
+            }
+            if (is_null($model->total_members)) {
+                $model->total_members = 0;
+            }
+            
+            // Additional safety checks for other potentially problematic fields
+            if (is_null($model->status)) {
+                $model->status = 'active';
+            }
+            if (is_null($model->country)) {
+                $model->country = 'Ecuador';
+            }
+        });
+
+        static::saving(function ($model) {
+            // Double-check critical fields before saving
+            if (is_null($model->can_create_tournaments)) {
+                $model->can_create_tournaments = false;
+            }
+            if (is_null($model->total_members)) {
+                $model->total_members = 0;
             }
         });
     }
@@ -135,6 +182,46 @@ class Club extends Model
         } while (self::where('club_code', $code)->exists());
         
         return $code;
+    }
+
+    /**
+     * Create a new club with safe defaults for all required fields.
+     */
+    public static function createSafely(array $attributes = [])
+    {
+        // Ensure all critical fields have safe defaults
+        $safeAttributes = array_merge([
+            'can_create_tournaments' => false,
+            'total_members' => 0,
+            'status' => 'active',
+            'country' => 'Ecuador',
+            // Initialize all count fields to 0
+            'u800_count' => 0,
+            'u900_count' => 0,
+            'u901_u1000_count' => 0,
+            'u1001_u1100_count' => 0,
+            'u1101_u1200_count' => 0,
+            'u1201_u1300_count' => 0,
+            'u1301_u1400_count' => 0,
+            'u1401_u1500_count' => 0,
+            'u1501_u1600_count' => 0,
+            'u1601_u1700_count' => 0,
+            'u1701_u1800_count' => 0,
+            'u1801_u1900_count' => 0,
+            'u1901_u2000_count' => 0,
+            'u2001_u2100_count' => 0,
+            'u2101_u2200_count' => 0,
+            'over_u2200_count' => 0,
+        ], $attributes);
+
+        // Ensure no null values for critical fields
+        foreach (['can_create_tournaments', 'total_members'] as $field) {
+            if (is_null($safeAttributes[$field])) {
+                $safeAttributes[$field] = $field === 'can_create_tournaments' ? false : 0;
+            }
+        }
+
+        return static::create($safeAttributes);
     }
 
     /**
@@ -424,7 +511,7 @@ class Club extends Model
     /**
      * Add ranking history entry.
      */
-    public function addRankingHistory(float $averageRanking, string $period = null): void
+    public function addRankingHistory(float $averageRanking, ?string $period = null): void
     {
         $history = $this->ranking_history ?? [];
         $period = $period ?? now()->format('Y-m');
