@@ -103,6 +103,37 @@ class AuthController extends Controller
                     'city' => 'required|string|max:100',
                     'address' => 'required|string|max:500',
                     'logo_path' => 'nullable|string|max:500',
+                    
+                    // Additional club fields
+                    'ruc' => 'nullable|string|max:20|unique:clubs,ruc',
+                    'province' => 'nullable|string|max:100',
+                    'latitude' => 'nullable|numeric|between:-90,90',
+                    'longitude' => 'nullable|numeric|between:-180,180',
+                    'google_maps_url' => 'nullable|url|max:500',
+                    'description' => 'nullable|string|max:1000',
+                    'founded_date' => 'nullable|date|before_or_equal:today',
+                    'number_of_tables' => 'nullable|integer|min:0|max:50',
+                    'can_create_tournaments' => 'nullable|boolean',
+                    
+                    // Representative information
+                    'representative_name' => 'nullable|string|max:255',
+                    'representative_phone' => 'nullable|string|max:20',
+                    'representative_email' => 'nullable|email|max:255',
+                    
+                    // Administrator 1
+                    'admin1_name' => 'nullable|string|max:255',
+                    'admin1_phone' => 'nullable|string|max:20',
+                    'admin1_email' => 'nullable|email|max:255',
+                    
+                    // Administrator 2
+                    'admin2_name' => 'nullable|string|max:255',
+                    'admin2_phone' => 'nullable|string|max:20',
+                    'admin2_email' => 'nullable|email|max:255',
+                    
+                    // Administrator 3
+                    'admin3_name' => 'nullable|string|max:255',
+                    'admin3_phone' => 'nullable|string|max:20',
+                    'admin3_email' => 'nullable|email|max:255',
                 ];
 
             case 'miembro':
@@ -207,7 +238,7 @@ class AuthController extends Controller
                 break;
 
             case 'club':
-                $club = Club::create([
+                $clubData = [
                     'user_id' => $user->id,
                     'league_id' => $validatedData['parent_league_id'],
                     'name' => $validatedData['club_name'],
@@ -215,7 +246,41 @@ class AuthController extends Controller
                     'address' => $validatedData['address'],
                     'logo_path' => $validatedData['logo_path'] ?? null,
                     'status' => 'active',
-                ]);
+                    'country' => $user->country,
+                    
+                    // Additional club fields
+                    'ruc' => $validatedData['ruc'] ?? null,
+                    'province' => $validatedData['province'] ?? null,
+                    'latitude' => $validatedData['latitude'] ?? null,
+                    'longitude' => $validatedData['longitude'] ?? null,
+                    'google_maps_url' => $validatedData['google_maps_url'] ?? null,
+                    'description' => $validatedData['description'] ?? null,
+                    'founded_date' => $validatedData['founded_date'] ?? null,
+                    'number_of_tables' => $validatedData['number_of_tables'] ?? null,
+                    'can_create_tournaments' => $validatedData['can_create_tournaments'] ?? false,
+                    
+                    // Representative information
+                    'representative_name' => $validatedData['representative_name'] ?? null,
+                    'representative_phone' => $validatedData['representative_phone'] ?? null,
+                    'representative_email' => $validatedData['representative_email'] ?? null,
+                    
+                    // Administrator 1
+                    'admin1_name' => $validatedData['admin1_name'] ?? null,
+                    'admin1_phone' => $validatedData['admin1_phone'] ?? null,
+                    'admin1_email' => $validatedData['admin1_email'] ?? null,
+                    
+                    // Administrator 2
+                    'admin2_name' => $validatedData['admin2_name'] ?? null,
+                    'admin2_phone' => $validatedData['admin2_phone'] ?? null,
+                    'admin2_email' => $validatedData['admin2_email'] ?? null,
+                    
+                    // Administrator 3
+                    'admin3_name' => $validatedData['admin3_name'] ?? null,
+                    'admin3_phone' => $validatedData['admin3_phone'] ?? null,
+                    'admin3_email' => $validatedData['admin3_email'] ?? null,
+                ];
+                
+                $club = Club::create($clubData);
                 $user->update([
                     'roleable_id' => $club->id,
                     'roleable_type' => Club::class,
@@ -264,8 +329,11 @@ class AuthController extends Controller
         $user = Auth::user();
         $user->load(['parentLeague', 'parentClub', 'leagueEntity', 'clubEntity', 'memberEntity']);
 
-        // Create a new token for the user
-        $token = $user->createToken('auth-token')->plainTextToken;
+        // Delete any existing tokens for this user to prevent token accumulation
+        $user->tokens()->delete();
+
+        // Create a new token for the user with a specific name and abilities
+        $token = $user->createToken('auth-token', ['*'], now()->addHours(24))->plainTextToken;
 
         return response()->json([
             'data' => [
@@ -282,17 +350,30 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        // Delete all tokens for the user
-        $request->user()->tokens()->delete();
-        
-        Auth::logout();
+        try {
+            // Delete all tokens for the user
+            if ($request->user()) {
+                $request->user()->tokens()->delete();
+            }
+            
+            // Logout from session
+            Auth::logout();
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+            // Invalidate session
+            if ($request->hasSession()) {
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
 
-        return response()->json([
-            'message' => 'Cierre de sesión exitoso',
-        ]);
+            return response()->json([
+                'message' => 'Cierre de sesión exitoso',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error durante el cierre de sesión',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -300,15 +381,29 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
-        $user->load(['parentLeague', 'parentClub', 'leagueEntity', 'clubEntity', 'memberEntity']);
+        try {
+            $user = $request->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Usuario no autenticado',
+                ], 401);
+            }
 
-        return response()->json([
-            'data' => [
-                'user' => $user,
-                'role_info' => $user->role_info,
-            ],
-        ]);
+            $user->load(['parentLeague', 'parentClub', 'leagueEntity', 'clubEntity', 'memberEntity']);
+
+            return response()->json([
+                'data' => [
+                    'user' => $user,
+                    'role_info' => $user->role_info,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error al obtener información del usuario',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

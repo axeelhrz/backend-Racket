@@ -31,9 +31,8 @@ return new class extends Migration
             $table->string('province'); // Provincia
             $table->string('city'); // Ciudad
             
-            // Club y federación
+            // Club (sin federación)
             $table->string('club_name')->nullable(); // Club
-            $table->string('federation')->nullable(); // Federación
             
             // Estilo de juego
             $table->enum('playing_side', ['derecho', 'zurdo'])->nullable(); // Lado de juego
@@ -45,22 +44,22 @@ return new class extends Migration
             $table->string('racket_custom_brand')->nullable(); // Marca personalizada
             $table->string('racket_custom_model')->nullable(); // Modelo personalizado
             
-            // Caucho del drive
+            // Caucho del drive - Updated with corrected rubber type
             $table->string('drive_rubber_brand')->nullable(); // Marca
             $table->string('drive_rubber_model')->nullable(); // Modelo
-            $table->enum('drive_rubber_type', ['liso', 'pupo_largo', 'pupo_corto', 'antitopspin'])->nullable(); // Tipo
+            $table->enum('drive_rubber_type', ['liso', 'pupo_largo', 'pupo_corto', 'antitopsping'])->nullable(); // Tipo corregido
             $table->enum('drive_rubber_color', ['negro', 'rojo', 'verde', 'azul', 'amarillo', 'morado', 'fucsia'])->nullable(); // Color
-            $table->string('drive_rubber_sponge')->nullable(); // Esponja
+            $table->string('drive_rubber_sponge')->nullable(); // Esponja - Updated to support new values
             $table->string('drive_rubber_hardness')->nullable(); // Hardness
             $table->string('drive_rubber_custom_brand')->nullable(); // Marca personalizada
             $table->string('drive_rubber_custom_model')->nullable(); // Modelo personalizado
             
-            // Caucho del back
+            // Caucho del back - Updated with corrected rubber type
             $table->string('backhand_rubber_brand')->nullable(); // Marca
             $table->string('backhand_rubber_model')->nullable(); // Modelo
-            $table->enum('backhand_rubber_type', ['liso', 'pupo_largo', 'pupo_corto', 'antitopspin'])->nullable(); // Tipo
+            $table->enum('backhand_rubber_type', ['liso', 'pupo_largo', 'pupo_corto', 'antitopsping'])->nullable(); // Tipo corregido
             $table->enum('backhand_rubber_color', ['negro', 'rojo', 'verde', 'azul', 'amarillo', 'morado', 'fucsia'])->nullable(); // Color
-            $table->string('backhand_rubber_sponge')->nullable(); // Esponja
+            $table->string('backhand_rubber_sponge')->nullable(); // Esponja - Updated to support new values
             $table->string('backhand_rubber_hardness')->nullable(); // Hardness
             $table->string('backhand_rubber_custom_brand')->nullable(); // Marca personalizada
             $table->string('backhand_rubber_custom_model')->nullable(); // Modelo personalizado
@@ -79,7 +78,7 @@ return new class extends Migration
             // Indexes
             $table->index(['status', 'created_at']);
             $table->index(['province', 'city']);
-            $table->index(['club_name', 'federation']);
+            $table->index(['club_name']);
             $table->index('registration_code');
         });
     }

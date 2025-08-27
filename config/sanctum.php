@@ -15,7 +15,15 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', 'localhost:3000,127.0.0.1:3000,involved-retailers-occasionally-macintosh.trycloudflare.com,dancing-ate-medieval-lower.trycloudflare.com')),
+    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
+        '%s,%s,%s,%s,%s,%s',
+        'localhost:3000',
+        '127.0.0.1:3000',
+        'localhost:3002',
+        '127.0.0.1:3002',
+        'raquet-power2-0.vercel.app',
+        'involved-retailers-occasionally-macintosh.trycloudflare.com'
+    ))),
 
     /*
     |--------------------------------------------------------------------------
@@ -42,7 +50,7 @@ return [
     |
     */
 
-    'expiration' => null,
+    'expiration' => env('SANCTUM_TOKEN_EXPIRATION', 60 * 24), // 24 hours default
 
     /*
     |--------------------------------------------------------------------------
