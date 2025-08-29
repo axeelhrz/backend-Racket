@@ -13,7 +13,9 @@ class QuickRegistration extends Model
     protected $fillable = [
         'registration_code',
         'first_name',
+        'second_name',
         'last_name',
+        'second_last_name',
         'doc_id',
         'email',
         'phone',
@@ -88,11 +90,18 @@ class QuickRegistration extends Model
     }
 
     /**
-     * Get the person's full name.
+     * Get the person's full name with support for split names.
      */
     public function getFullNameAttribute(): string
     {
-        return $this->first_name . ' ' . $this->last_name;
+        $names = array_filter([
+            $this->first_name,
+            $this->second_name,
+            $this->last_name,
+            $this->second_last_name
+        ]);
+        
+        return implode(' ', $names);
     }
 
     /**

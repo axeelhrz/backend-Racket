@@ -112,7 +112,6 @@ class AuthController extends Controller
                     'google_maps_url' => 'nullable|url|max:500',
                     'description' => 'nullable|string|max:1000',
                     'founded_date' => 'nullable|date|before_or_equal:today',
-                    'can_create_tournaments' => 'nullable|boolean',
                     
                     // Representative information
                     'representative_name' => 'nullable|string|max:255',
@@ -257,7 +256,6 @@ class AuthController extends Controller
                     'founded_date' => $validatedData['founded_date'] ?? null,
                     
                     // Critical fields that must have values
-                    'can_create_tournaments' => isset($validatedData['can_create_tournaments']) ? (bool)$validatedData['can_create_tournaments'] : false,
                     'total_members' => 0,
                     
                     // Representative information
@@ -282,7 +280,6 @@ class AuthController extends Controller
                 ];
                 
                 // Ensure no null values for critical fields
-                $clubData['can_create_tournaments'] = $clubData['can_create_tournaments'] ?? false;
                 $clubData['total_members'] = $clubData['total_members'] ?? 0;
                 
                 $club = Club::createSafely($clubData);

@@ -64,7 +64,6 @@ class Club extends Model
         // Additional fields
         'ranking_history',
         'monthly_stats',
-        'can_create_tournaments',
         'description',
         'founded_date',
     ];
@@ -94,7 +93,6 @@ class Club extends Model
         'over_u2200_count' => 'integer',
         'ranking_history' => 'array',
         'monthly_stats' => 'array',
-        'can_create_tournaments' => 'boolean',
         'founded_date' => 'date',
     ];
 
@@ -110,7 +108,6 @@ class Club extends Model
     ];
 
     protected $attributes = [
-        'can_create_tournaments' => false,
         'total_members' => 0,
         'u800_count' => 0,
         'u900_count' => 0,
@@ -145,9 +142,6 @@ class Club extends Model
             }
             
             // Ensure critical fields have default values
-            if (is_null($model->can_create_tournaments)) {
-                $model->can_create_tournaments = false;
-            }
             if (is_null($model->total_members)) {
                 $model->total_members = 0;
             }
@@ -163,9 +157,6 @@ class Club extends Model
 
         static::saving(function ($model) {
             // Double-check critical fields before saving
-            if (is_null($model->can_create_tournaments)) {
-                $model->can_create_tournaments = false;
-            }
             if (is_null($model->total_members)) {
                 $model->total_members = 0;
             }
@@ -191,7 +182,6 @@ class Club extends Model
     {
         // Ensure all critical fields have safe defaults
         $safeAttributes = array_merge([
-            'can_create_tournaments' => false,
             'total_members' => 0,
             'status' => 'active',
             'country' => 'Ecuador',
@@ -215,9 +205,9 @@ class Club extends Model
         ], $attributes);
 
         // Ensure no null values for critical fields
-        foreach (['can_create_tournaments', 'total_members'] as $field) {
+        foreach (['total_members'] as $field) {
             if (is_null($safeAttributes[$field])) {
-                $safeAttributes[$field] = $field === 'can_create_tournaments' ? false : 0;
+                $safeAttributes[$field] = 0;
             }
         }
 
@@ -300,14 +290,6 @@ class Club extends Model
             'members.user',
             'memberUsers'
         ]);
-    }
-
-    /**
-     * Scope clubs that can create tournaments.
-     */
-    public function scopeCanCreateTournaments($query)
-    {
-        return $query->where('can_create_tournaments', true);
     }
 
     /**

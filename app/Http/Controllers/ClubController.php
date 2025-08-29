@@ -39,11 +39,6 @@ class ClubController extends Controller
             $query->where('city', $request->city);
         }
 
-        // Filter by tournament creation capability
-        if ($request->has('can_create_tournaments')) {
-            $query->where('can_create_tournaments', $request->boolean('can_create_tournaments'));
-        }
-
         // Search by name, city, or club code
         if ($request->has('search')) {
             $search = $request->search;
@@ -86,9 +81,6 @@ class ClubController extends Controller
             'description' => 'nullable|string|max:1000',
             'founded_date' => 'nullable|date|before_or_equal:today',
             
-            // Club statistics
-            'can_create_tournaments' => 'nullable|boolean',
-            
             // Representative information
             'representative_name' => 'nullable|string|max:255',
             'representative_phone' => 'nullable|string|max:20',
@@ -124,7 +116,6 @@ class ClubController extends Controller
         // Set defaults to prevent null constraint violations
         $validated['status'] = $validated['status'] ?? 'active';
         $validated['country'] = $validated['country'] ?? 'Ecuador';
-        $validated['can_create_tournaments'] = $validated['can_create_tournaments'] ?? false;
         $validated['total_members'] = 0; // Always start with 0 members
 
         $club = Club::create($validated);
@@ -176,9 +167,6 @@ class ClubController extends Controller
             'status' => 'nullable|in:active,inactive',
             'description' => 'nullable|string|max:1000',
             'founded_date' => 'nullable|date|before_or_equal:today',
-            
-            // Club statistics
-            'can_create_tournaments' => 'nullable|boolean',
             
             // Representative information
             'representative_name' => 'nullable|string|max:255',
@@ -308,7 +296,6 @@ class ClubController extends Controller
                 'name' => $club->name,
                 'total_members' => $club->total_members,
                 'average_ranking' => $club->average_ranking,
-                'can_create_tournaments' => $club->can_create_tournaments,
             ],
             'category_distribution' => $club->category_distribution,
             'contact_info' => $club->contact_info,
@@ -348,42 +335,6 @@ class ClubController extends Controller
             'message' => 'Logo uploaded successfully',
             'logo_url' => Storage::url($path),
             'data' => $club->fresh()
-        ]);
-    }
-
-    /**
-     * Get clubs that can create tournaments
-     */
-    public function getTournamentCreators(Request $request): JsonResponse
-    {
-        $query = Club::canCreateTournaments()
-                    ->with('league')
-                    ->active();
-
-        if ($request->has('league_id')) {
-            $query->where('league_id', $request->league_id);
-        }
-
-        $clubs = $query->orderBy('name')->get();
-
-        return response()->json([
-            'data' => $clubs,
-            'message' => 'Tournament creator clubs retrieved successfully',
-        ]);
-    }
-
-    /**
-     * Toggle tournament creation permission
-     */
-    public function toggleTournamentPermission(Club $club): JsonResponse
-    {
-        $club->update([
-            'can_create_tournaments' => !$club->can_create_tournaments
-        ]);
-
-        return response()->json([
-            'data' => $club->fresh(),
-            'message' => 'Tournament permission updated successfully',
         ]);
     }
 

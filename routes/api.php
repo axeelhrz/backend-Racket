@@ -13,6 +13,7 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\QuickRegistrationController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use App\Models\League;
 
 // Health check endpoint - should be first
 Route::get('/health', function () {
@@ -107,6 +108,67 @@ Route::post('/test-register', function (Request $request) {
         return response()->json([
             'message' => 'Server error',
             'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Admin endpoint to delete specific league (temporary for cleanup)
+Route::delete('/admin/delete-league/{name}', function ($name) {
+    try {
+        // Find the league
+        $league = League::where('name', $name)->first();
+        
+        if (!$league) {
+            return response()->json([
+                'success' => false,
+                'message' => "League '{$name}' not found.",
+                'timestamp' => now()
+            ], 404);
+        }
+        
+        // Check if league has clubs
+        $clubsCount = $league->clubs()->count();
+        if ($clubsCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot delete league '{$name}' because it has {$clubsCount} associated clubs.",
+                'timestamp' => now()
+            ], 422);
+        }
+        
+        DB::beginTransaction();
+        
+        try {
+            // Get the admin user
+            $adminUser = $league->user;
+            
+            // Delete the league
+            $league->delete();
+            
+            // Delete the admin user if it exists and is only associated with this league
+            if ($adminUser && $adminUser->role === 'liga') {
+                $adminUser->delete();
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => "League '{$name}' deleted successfully.",
+                'deleted_admin_user' => $adminUser ? $adminUser->name : null,
+                'timestamp' => now()
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            throw $e;
+        }
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error deleting league: ' . $e->getMessage(),
+            'timestamp' => now()
         ], 500);
     }
 });

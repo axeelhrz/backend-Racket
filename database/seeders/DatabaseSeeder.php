@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             SuperAdminSeeder::class,
             LeagueSeeder::class,
             ClubSeeder::class,
+            SportSeeder::class,
         ]);
 
         $this->command->info('🎉 Database seeding completed successfully!');

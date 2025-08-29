@@ -88,7 +88,7 @@ class Member extends Model
 
     protected $with = ['club'];
 
-    protected $appends = ['full_name', 'age', 'birth_date'];
+    protected $appends = ['full_name', 'age'];
 
     /**
      * Get the user that owns this member.
@@ -136,11 +136,23 @@ class Member extends Model
      */
     public function getAgeAttribute(): ?int
     {
-        if (!$this->birthdate) {
+        // Check if birthdate exists and is not null
+        if (!isset($this->attributes['birthdate']) || $this->attributes['birthdate'] === null) {
             return null;
         }
 
-        return $this->birthdate->diffInYears(now());
+        try {
+            // If birthdate is already a Carbon instance
+            if ($this->birthdate instanceof \Carbon\Carbon) {
+                return $this->birthdate->diffInYears(now());
+            }
+
+            // If birthdate is a string, try to parse it
+            $birthdate = \Carbon\Carbon::parse($this->attributes['birthdate']);
+            return $birthdate->diffInYears(now());
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**
@@ -148,7 +160,22 @@ class Member extends Model
      */
     public function getBirthDateAttribute(): ?string
     {
-        return $this->birthdate ? $this->birthdate->format('Y-m-d') : null;
+        // Check if birthdate exists and is not null
+        if (!isset($this->attributes['birthdate']) || $this->attributes['birthdate'] === null) {
+            return null;
+        }
+
+        // If birthdate is already a Carbon instance
+        if ($this->birthdate instanceof \Carbon\Carbon) {
+            return $this->birthdate->format('Y-m-d');
+        }
+
+        // If birthdate is a string, try to parse it
+        try {
+            return \Carbon\Carbon::parse($this->attributes['birthdate'])->format('Y-m-d');
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**
