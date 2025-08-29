@@ -16,8 +16,9 @@ return new class extends Migration
             $table->string('second_name')->nullable()->after('first_name');
             $table->string('second_last_name')->nullable()->after('last_name');
             
-            // Add index for better search performance
-            $table->index(['first_name', 'second_name', 'last_name', 'second_last_name'], 'full_name_index');
+            // Add individual indexes instead of composite index to avoid MySQL key length limit
+            $table->index('first_name');
+            $table->index('last_name');
         });
     }
 
@@ -27,7 +28,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('quick_registrations', function (Blueprint $table) {
-            $table->dropIndex('full_name_index');
+            $table->dropIndex(['first_name']);
+            $table->dropIndex(['last_name']);
             $table->dropColumn(['second_name', 'second_last_name']);
         });
     }
