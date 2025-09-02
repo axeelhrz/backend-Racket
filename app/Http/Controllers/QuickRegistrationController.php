@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\QuickRegistration;
+use App\Models\CustomField;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -15,427 +16,583 @@ class QuickRegistrationController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            // Información personal básica
-            'first_name' => 'required|string|min:2|max:255',
-            'last_name' => 'required|string|min:2|max:255',
-            'doc_id' => 'nullable|string|max:20',
-            'email' => 'required|email|max:255|unique:quick_registrations,email',
-            'phone' => 'required|string|min:10|max:20',
-            'birth_date' => 'nullable|date|before:today',
-            'gender' => 'nullable|in:masculino,femenino',
-            
-            // Ubicación
-            'country' => 'nullable|string|max:100',
-            'province' => 'required|string|max:100',
-            'city' => 'required|string|max:100',
-            
-            // Club y federación
-            'club_name' => 'nullable|string|max:255',
-            'federation' => 'nullable|string|max:255',
-            
-            // Estilo de juego
-            'playing_side' => 'nullable|in:derecho,zurdo',
-            'playing_style' => 'nullable|in:clasico,lapicero',
-            
-            // Raqueta - palo
-            'racket_brand' => 'nullable|string|max:100',
-            'racket_model' => 'nullable|string|max:100',
-            'racket_custom_brand' => 'nullable|string|max:100',
-            'racket_custom_model' => 'nullable|string|max:100',
-            
-            // Caucho del drive
-            'drive_rubber_brand' => 'nullable|string|max:100',
-            'drive_rubber_model' => 'nullable|string|max:100',
-            'drive_rubber_type' => 'nullable|in:liso,pupo_largo,pupo_corto,antitopspin',
-            'drive_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
-            'drive_rubber_sponge' => 'nullable|string|max:20',
-            'drive_rubber_hardness' => 'nullable|string|max:20',
-            'drive_rubber_custom_brand' => 'nullable|string|max:100',
-            'drive_rubber_custom_model' => 'nullable|string|max:100',
-            
-            // Caucho del back
-            'backhand_rubber_brand' => 'nullable|string|max:100',
-            'backhand_rubber_model' => 'nullable|string|max:100',
-            'backhand_rubber_type' => 'nullable|in:liso,pupo_largo,pupo_corto,antitopspin',
-            'backhand_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
-            'backhand_rubber_sponge' => 'nullable|string|max:20',
-            'backhand_rubber_hardness' => 'nullable|string|max:20',
-            'backhand_rubber_custom_brand' => 'nullable|string|max:100',
-            'backhand_rubber_custom_model' => 'nullable|string|max:100',
-            
-            // Información adicional
-            'notes' => 'nullable|string|max:1000',
-            
-            // Photo upload - made optional and with better validation
-            'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // 5MB max
-        ]);
-
-        // Handle photo upload with better error handling
-        if ($request->hasFile('photo')) {
-            try {
-                $photo = $request->file('photo');
-                
-                // Validate the file is actually an image
-                if (!$photo->isValid()) {
-                    return response()->json([
-                        'message' => 'El archivo de foto no es válido.',
-                        'errors' => ['photo' => ['El archivo de foto está corrupto o no es válido.']]
-                    ], 422);
-                }
-                
-                // Create directory if it doesn't exist
-                $directory = 'quick_registrations/photos';
-                if (!Storage::disk('public')->exists($directory)) {
-                    Storage::disk('public')->makeDirectory($directory);
-                }
-                
-                // Generate unique filename
-                $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
-                
-                // Store the file
-                $path = $photo->storeAs($directory, $filename, 'public');
-                
-                if ($path) {
-                    $validated['photo_path'] = $path;
-                } else {
-                    // If photo upload fails, log the error but continue without photo
-                    \Log::warning('Photo upload failed for quick registration', [
-                        'email' => $validated['email'],
-                        'filename' => $filename
-                    ]);
-                }
-            } catch (\Exception $e) {
-                // Log the error but don't fail the registration
-                \Log::error('Photo upload error in quick registration', [
-                    'error' => $e->getMessage(),
-                    'email' => $validated['email']
-                ]);
-                
-                // Continue without photo - don't fail the entire registration
-            }
-        }
-
-        // Remove photo from validated data as it's not a database field
-        unset($validated['photo']);
-
-        // Set default values
-        $validated['country'] = $validated['country'] ?? 'Ecuador';
-
-        // Add metadata
-        $validated['metadata'] = [
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'registration_source' => 'quick_registration_form',
-            'timestamp' => now()->toISOString(),
-        ];
-
         try {
-            $registration = QuickRegistration::create($validated);
+            // Validate the request
+            $validatedData = $request->validate([
+                // Personal information
+                'first_name' => 'required|string|max:255',
+                'second_name' => 'nullable|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'second_last_name' => 'nullable|string|max:255',
+                'doc_id' => 'nullable|string|max:20',
+                'email' => 'required|email|unique:quick_registrations,email',
+                'phone' => 'required|string|max:20',
+                'birth_date' => 'nullable|date',
+                'gender' => 'nullable|in:masculino,femenino',
+                
+                // Location
+                'country' => 'nullable|string|max:255',
+                'province' => 'required|string|max:255',
+                'city' => 'required|string|max:255',
+                
+                // League and club
+                'league' => 'nullable|string|max:255',
+                'club_name' => 'nullable|string|max:255',
+                'custom_club_name' => 'nullable|string|max:255',
+                'ranking' => 'nullable|string|max:50',
+                
+                // Playing style
+                'playing_side' => 'nullable|in:derecho,zurdo',
+                'playing_style' => 'nullable|in:clasico,lapicero',
+                
+                // Racket
+                'racket_brand' => 'nullable|string|max:255',
+                'racket_model' => 'nullable|string|max:255',
+                'racket_custom_brand' => 'nullable|string|max:255',
+                'racket_custom_model' => 'nullable|string|max:255',
+                
+                // Drive rubber
+                'drive_rubber_brand' => 'nullable|string|max:255',
+                'drive_rubber_model' => 'nullable|string|max:255',
+                'drive_rubber_type' => 'nullable|in:liso,pupo_largo,pupo_corto,antitopsping',
+                'drive_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
+                'drive_rubber_sponge' => 'nullable|string|max:10',
+                'drive_rubber_hardness' => 'nullable|string|max:50',
+                'drive_rubber_custom_brand' => 'nullable|string|max:255',
+                'drive_rubber_custom_model' => 'nullable|string|max:255',
+                'drive_rubber_custom_hardness' => 'nullable|string|max:50',
+                
+                // Backhand rubber
+                'backhand_rubber_brand' => 'nullable|string|max:255',
+                'backhand_rubber_model' => 'nullable|string|max:255',
+                'backhand_rubber_type' => 'nullable|in:liso,pupo_largo,pupo_corto,antitopsping',
+                'backhand_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
+                'backhand_rubber_sponge' => 'nullable|string|max:10',
+                'backhand_rubber_hardness' => 'nullable|string|max:50',
+                'backhand_rubber_custom_brand' => 'nullable|string|max:255',
+                'backhand_rubber_custom_model' => 'nullable|string|max:255',
+                'backhand_rubber_custom_hardness' => 'nullable|string|max:50',
+                
+                // Additional info
+                'notes' => 'nullable|string|max:1000',
+                
+                // Photo
+                'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // 5MB max
+            ]);
+
+            // Handle custom club name
+            if ($request->club_name === 'custom' && $request->custom_club_name) {
+                $validatedData['club_name'] = $request->custom_club_name;
+            }
+
+            // Generate unique registration code
+            do {
+                $registrationCode = 'REG-' . strtoupper(substr(md5(uniqid()), 0, 8));
+            } while (QuickRegistration::where('registration_code', $registrationCode)->exists());
+
+            $validatedData['registration_code'] = $registrationCode;
+
+            // Handle photo upload
+            if ($request->hasFile('photo')) {
+                $photo = $request->file('photo');
+                $photoPath = $photo->store('quick_registrations', 'public');
+                $validatedData['photo_path'] = $photoPath;
+            }
+
+            // Create the registration
+            $registration = QuickRegistration::create($validatedData);
 
             return response()->json([
-                'message' => 'Registro exitoso. Te contactaremos pronto.',
-                'data' => $registration,
-                'registration_id' => $registration->id,
-                'registration_code' => $registration->registration_code,
+                'success' => true,
+                'message' => 'Registro exitoso',
+                'registration_code' => $registrationCode,
+                'data' => $registration
             ], 201);
-        } catch (\Exception $e) {
-            \Log::error('Error creating quick registration', [
-                'error' => $e->getMessage(),
-                'email' => $validated['email'] ?? 'unknown'
-            ]);
-            
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
-                'message' => 'Error al crear el registro. Por favor intenta de nuevo.',
-                'errors' => ['general' => ['Error interno del servidor.']]
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error in quick registration: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error interno del servidor'
             ], 500);
         }
     }
 
     /**
-     * Get all quick registrations (admin only).
+     * Get all quick registrations.
      */
-    public function index(Request $request): JsonResponse
+    public function index(): JsonResponse
     {
-        $query = QuickRegistration::query();
-
-        // Apply filters
-        if ($request->has('status') && $request->status) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->has('province') && $request->province) {
-            $query->where('province', $request->province);
-        }
-
-        if ($request->has('city') && $request->city) {
-            $query->where('city', $request->city);
-        }
-
-        if ($request->has('club_name') && $request->club_name) {
-            $query->where('club_name', 'like', '%' . $request->club_name . '%');
-        }
-
-        if ($request->has('federation') && $request->federation) {
-            $query->where('federation', 'like', '%' . $request->federation . '%');
-        }
-
-        if ($request->has('playing_side') && $request->playing_side) {
-            $query->where('playing_side', $request->playing_side);
-        }
-
-        if ($request->has('playing_style') && $request->playing_style) {
-            $query->where('playing_style', $request->playing_style);
-        }
-
-        if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('doc_id', 'like', "%{$search}%")
-                  ->orWhere('registration_code', 'like', "%{$search}%");
-            });
-        }
-
-        $perPage = $request->get('per_page', 15);
-        $registrations = $query->orderBy('created_at', 'desc')->paginate($perPage);
-
-        return response()->json($registrations);
-    }
-
-    /**
-     * Show a specific registration.
-     */
-    public function show(QuickRegistration $quickRegistration): JsonResponse
-    {
-        return response()->json(['data' => $quickRegistration]);
-    }
-
-    /**
-     * Update registration status.
-     */
-    public function updateStatus(Request $request, QuickRegistration $quickRegistration): JsonResponse
-    {
-        $validated = $request->validate([
-            'status' => 'required|in:pending,contacted,approved,rejected',
-            'notes' => 'nullable|string|max:1000',
-        ]);
-
-        $quickRegistration->update(['status' => $validated['status']]);
-
-        // Update timestamps based on status
-        switch ($validated['status']) {
-            case 'contacted':
-                $quickRegistration->markAsContacted();
-                break;
-            case 'approved':
-                $quickRegistration->markAsApproved();
-                break;
-        }
-
-        // Add admin notes to metadata if provided
-        if (isset($validated['notes'])) {
-            $metadata = $quickRegistration->metadata ?? [];
-            $metadata['admin_notes'] = $validated['notes'];
-            $metadata['status_updated_at'] = now()->toISOString();
-            $quickRegistration->update(['metadata' => $metadata]);
-        }
-
-        return response()->json([
-            'message' => 'Estado actualizado exitosamente',
-            'data' => $quickRegistration->fresh(),
-        ]);
-    }
-
-    /**
-     * Upload photo for registration.
-     */
-    public function uploadPhoto(Request $request, QuickRegistration $quickRegistration): JsonResponse
-    {
-        $request->validate([
-            'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240', // 10MB max
-        ]);
-
-        // Delete old photo if exists
-        if ($quickRegistration->photo_path && Storage::disk('public')->exists($quickRegistration->photo_path)) {
-            Storage::disk('public')->delete($quickRegistration->photo_path);
-        }
-
-        $photo = $request->file('photo');
-        $filename = time() . '_' . uniqid() . '.' . $photo->getClientOriginalExtension();
-        $path = $photo->storeAs('quick_registrations/photos', $filename, 'public');
-
-        $quickRegistration->update(['photo_path' => $path]);
-
-        return response()->json([
-            'message' => 'Foto subida exitosamente',
-            'photo_url' => Storage::url($path),
-            'data' => $quickRegistration->fresh()
-        ]);
-    }
-
-    /**
-     * Get registration statistics.
-     */
-    public function getStatistics(): JsonResponse
-    {
-        $stats = [
-            'total_registrations' => QuickRegistration::count(),
-            'pending_registrations' => QuickRegistration::pending()->count(),
-            'contacted_registrations' => QuickRegistration::contacted()->count(),
-            'approved_registrations' => QuickRegistration::approved()->count(),
-            'rejected_registrations' => QuickRegistration::where('status', 'rejected')->count(),
-
-            'by_province' => QuickRegistration::select('province', DB::raw('count(*) as count'))
-                ->groupBy('province')
-                ->orderBy('count', 'desc')
-                ->get(),
-
-            'by_club' => QuickRegistration::select('club_name', DB::raw('count(*) as count'))
-                ->whereNotNull('club_name')
-                ->groupBy('club_name')
-                ->orderBy('count', 'desc')
-                ->limit(10)
-                ->get(),
-
-            'by_federation' => QuickRegistration::select('federation', DB::raw('count(*) as count'))
-                ->whereNotNull('federation')
-                ->groupBy('federation')
-                ->orderBy('count', 'desc')
-                ->get(),
-
-            'by_playing_style' => QuickRegistration::select('playing_style', DB::raw('count(*) as count'))
-                ->whereNotNull('playing_style')
-                ->groupBy('playing_style')
-                ->get(),
-
-            'by_playing_side' => QuickRegistration::select('playing_side', DB::raw('count(*) as count'))
-                ->whereNotNull('playing_side')
-                ->groupBy('playing_side')
-                ->get(),
-
-            'by_gender' => QuickRegistration::select('gender', DB::raw('count(*) as count'))
-                ->whereNotNull('gender')
-                ->groupBy('gender')
-                ->get(),
-
-            'equipment_stats' => [
-                'racket_brands' => QuickRegistration::select('racket_brand', DB::raw('count(*) as count'))
-                    ->whereNotNull('racket_brand')
-                    ->groupBy('racket_brand')
-                    ->orderBy('count', 'desc')
-                    ->limit(10)
-                    ->get(),
-                'drive_rubber_brands' => QuickRegistration::select('drive_rubber_brand', DB::raw('count(*) as count'))
-                    ->whereNotNull('drive_rubber_brand')
-                    ->groupBy('drive_rubber_brand')
-                    ->orderBy('count', 'desc')
-                    ->limit(10)
-                    ->get(),
-                'backhand_rubber_brands' => QuickRegistration::select('backhand_rubber_brand', DB::raw('count(*) as count'))
-                    ->whereNotNull('backhand_rubber_brand')
-                    ->groupBy('backhand_rubber_brand')
-                    ->orderBy('count', 'desc')
-                    ->limit(10)
-                    ->get(),
-            ],
-
-            'recent_registrations' => QuickRegistration::where('created_at', '>=', now()->subDays(7))
-                ->count(),
-
-            'average_age' => QuickRegistration::whereNotNull('birth_date')
-                ->selectRaw('AVG(YEAR(CURDATE()) - YEAR(birth_date)) as avg_age')
-                ->value('avg_age'),
-
-            'registrations_by_day' => QuickRegistration::select(
-                    DB::raw('DATE(created_at) as date'),
-                    DB::raw('count(*) as count')
-                )
-                ->where('created_at', '>=', now()->subDays(30))
-                ->groupBy('date')
-                ->orderBy('date', 'desc')
-                ->get(),
-        ];
-
-        return response()->json($stats);
-    }
-
-    /**
-     * Check if email is already registered.
-     */
-    public function checkEmail(Request $request): JsonResponse
-    {
-        $request->validate([
-            'email' => 'required|email',
-        ]);
-
-        $exists = QuickRegistration::where('email', $request->email)->exists();
-
-        return response()->json([
-            'exists' => $exists,
-            'message' => $exists ? 'Este email ya está registrado' : 'Email disponible',
-        ]);
-    }
-
-    /**
-     * Get waiting room status for a specific email.
-     */
-    public function getWaitingRoomStatus(Request $request): JsonResponse
-    {
-        $request->validate([
-            'email' => 'required|email',
-        ]);
-
-        $registration = QuickRegistration::where('email', $request->email)->first();
-
-        if (!$registration) {
+        try {
+            $registrations = QuickRegistration::orderBy('created_at', 'desc')->get();
+            
             return response()->json([
-                'found' => false,
-                'message' => 'No se encontró registro con este email',
-            ], 404);
+                'success' => true,
+                'data' => $registrations
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener registros'
+            ], 500);
         }
-
-        return response()->json([
-            'found' => true,
-            'data' => [
-                'id' => $registration->id,
-                'registration_code' => $registration->registration_code,
-                'full_name' => $registration->full_name,
-                'status' => $registration->status,
-                'status_label' => $registration->status_label,
-                'status_color' => $registration->status_color,
-                'days_waiting' => $registration->days_waiting,
-                'club_summary' => $registration->club_summary,
-                'location_summary' => $registration->location_summary,
-                'playing_side_label' => $registration->playing_side_label,
-                'playing_style_label' => $registration->playing_style_label,
-                'racket_summary' => $registration->racket_summary,
-                'drive_rubber_summary' => $registration->drive_rubber_summary,
-                'backhand_rubber_summary' => $registration->backhand_rubber_summary,
-                'created_at' => $registration->created_at,
-                'contacted_at' => $registration->contacted_at,
-                'approved_at' => $registration->approved_at,
-            ],
-        ]);
     }
 
     /**
-     * Delete a registration.
+     * Get a specific registration by code.
      */
-    public function destroy(QuickRegistration $quickRegistration): JsonResponse
+    public function show(string $code): JsonResponse
     {
-        // Delete photo if exists
-        if ($quickRegistration->photo_path && Storage::disk('public')->exists($quickRegistration->photo_path)) {
-            Storage::disk('public')->delete($quickRegistration->photo_path);
+        try {
+            $registration = QuickRegistration::where('registration_code', $code)->first();
+            
+            if (!$registration) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Registro no encontrado'
+                ], 404);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $registration
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener registro'
+            ], 500);
         }
+    }
 
-        $quickRegistration->delete();
+    /**
+     * NUEVO: Agregar campo personalizado inmediatamente a la base de datos
+     */
+    public function addCustomField(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness',
+                'value' => 'required|string|min:2|max:255'
+            ]);
 
-        return response()->json([
-            'message' => 'Registro eliminado exitosamente',
-        ]);
+            $fieldType = $request->field_type;
+            $value = trim($request->value);
+
+            // Verificar si ya existe
+            if (CustomField::exists($fieldType, $value)) {
+                // Ya existe, solo incrementar contador
+                $field = CustomField::addOrUpdate($fieldType, $value);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Campo ya existía, contador actualizado',
+                    'field' => $field,
+                    'was_new' => false
+                ]);
+            }
+
+            // Agregar nuevo campo
+            $field = CustomField::addOrUpdate($fieldType, $value);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campo agregado exitosamente',
+                'field' => $field,
+                'was_new' => true
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error adding custom field: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al agregar campo personalizado'
+            ], 500);
+        }
+    }
+
+    /**
+     * NUEVO: Obtener opciones dinámicas para un tipo de campo
+     */
+    public function getFieldOptions(string $fieldType): JsonResponse
+    {
+        try {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tipo de campo no válido'
+                ], 400);
+            }
+
+            // Obtener opciones predefinidas
+            $predefinedOptions = $this->getPredefinedOptions($fieldType);
+            
+            // Obtener opciones personalizadas de la base de datos
+            $customOptions = CustomField::getValuesForType($fieldType);
+            
+            // Combinar y eliminar duplicados
+            $allOptions = array_unique(array_merge($predefinedOptions, $customOptions));
+            sort($allOptions);
+
+            return response()->json([
+                'success' => true,
+                'options' => array_values($allOptions),
+                'predefined_count' => count($predefinedOptions),
+                'custom_count' => count($customOptions),
+                'total_count' => count($allOptions)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting field options: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener opciones'
+            ], 500);
+        }
+    }
+
+    /**
+     * Validar campos personalizados contra la base de datos
+     * ACTUALIZADO: Incluir tabla custom_fields y marcas compartidas
+     */
+    public function validateCustomField(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness',
+                'value' => 'required|string|min:2|max:255'
+            ]);
+
+            $fieldType = $request->field_type;
+            $value = trim($request->value);
+            $normalizedValue = strtolower($value);
+
+            // Buscar en tabla custom_fields primero
+            $customFieldMatch = CustomField::where('field_type', $fieldType)
+                ->where('normalized_value', $normalizedValue)
+                ->first();
+
+            if ($customFieldMatch) {
+                return response()->json([
+                    'is_duplicate' => true,
+                    'suggested_value' => $customFieldMatch->value,
+                    'message' => "Ya existe '{$customFieldMatch->value}' en la base de datos",
+                    'match_type' => 'exact',
+                    'source' => 'custom_fields'
+                ]);
+            }
+
+            // Buscar en registros existentes
+            $searchFields = $this->getSearchFieldsForType($fieldType);
+            $exactMatches = $this->findExactMatches($searchFields, $normalizedValue);
+            
+            if (!empty($exactMatches)) {
+                return response()->json([
+                    'is_duplicate' => true,
+                    'suggested_value' => $exactMatches[0],
+                    'message' => "Ya existe '{$exactMatches[0]}' en registros",
+                    'match_type' => 'exact',
+                    'source' => 'registrations'
+                ]);
+            }
+
+            // Buscar coincidencias parciales en custom_fields
+            $partialCustomMatches = CustomField::findSimilar($fieldType, $value);
+            
+            if (!empty($partialCustomMatches)) {
+                return response()->json([
+                    'is_duplicate' => false,
+                    'suggested_value' => $partialCustomMatches[0],
+                    'message' => "¿Quisiste decir '{$partialCustomMatches[0]}'?",
+                    'match_type' => 'partial',
+                    'source' => 'custom_fields',
+                    'all_suggestions' => array_slice($partialCustomMatches, 0, 5)
+                ]);
+            }
+
+            // Buscar coincidencias parciales en registros
+            $partialMatches = $this->findPartialMatches($searchFields, $normalizedValue);
+            
+            if (!empty($partialMatches)) {
+                return response()->json([
+                    'is_duplicate' => false,
+                    'suggested_value' => $partialMatches[0],
+                    'message' => "¿Quisiste decir '{$partialMatches[0]}'?",
+                    'match_type' => 'partial',
+                    'source' => 'registrations',
+                    'all_suggestions' => array_slice($partialMatches, 0, 5)
+                ]);
+            }
+
+            // No se encontraron coincidencias
+            return response()->json([
+                'is_duplicate' => false,
+                'suggested_value' => $value,
+                'message' => 'Valor único, se puede agregar',
+                'match_type' => null,
+                'source' => null
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error validating custom field: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al validar campo'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener sugerencias para un tipo de campo
+     * ACTUALIZADO: Incluir custom_fields y marcas compartidas
+     */
+    public function getFieldSuggestions(Request $request, string $fieldType): JsonResponse
+    {
+        try {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tipo de campo no válido'
+                ], 400);
+            }
+
+            $query = $request->query('query', '');
+            
+            // Obtener sugerencias de custom_fields
+            $customSuggestions = [];
+            if (!empty($query)) {
+                $customSuggestions = CustomField::findSimilar($fieldType, $query);
+            } else {
+                $customSuggestions = CustomField::getValuesForType($fieldType);
+            }
+            
+            // Obtener sugerencias de registros existentes
+            $searchFields = $this->getSearchFieldsForType($fieldType);
+            $registrationSuggestions = $this->getAllSuggestions($searchFields, $query);
+            
+            // Combinar y eliminar duplicados
+            $allSuggestions = array_unique(array_merge($customSuggestions, $registrationSuggestions));
+            sort($allSuggestions);
+            
+            return response()->json([
+                'suggestions' => array_values($allSuggestions),
+                'total_count' => count($allSuggestions),
+                'custom_count' => count($customSuggestions),
+                'registration_count' => count($registrationSuggestions)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting field suggestions: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener sugerencias'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener opciones predefinidas para un tipo de campo
+     */
+    private function getPredefinedOptions(string $fieldType): array
+    {
+        switch ($fieldType) {
+            case 'brand':
+                return [
+                    'Andro', 'Avalox', 'Butterfly', 'Cornilleau', 'DHS', 'Donic', 'Double Fish', 
+                    'Dr. Neubauer', 'Friendship', 'Gewo', 'Hurricane', 'Joola', 'Killerspin', 
+                    'Nittaku', 'Palio', 'Sanwei', 'Saviga', 'Stiga', 'Tibhar', 'TSP', 
+                    'Victas', 'Xiom', 'Yinhe', 'Yasaka'
+                ];
+                
+            case 'racket_model':
+                return [
+                    'Allround Classic', 'Carbotec 7000', 'Clipper Wood', 'Defplay Senso', 
+                    'Evolution MX-P', 'Harimoto ALC', 'Hurricane Long 5', 'Innerforce Layer ALC', 
+                    'Kong Linghui', 'Ligna CO', 'Lin Gaoyuan ALC', 'Ma Lin Extra Offensive', 
+                    'Ma Long Carbon', 'Offensive Classic', 'Ovtcharov Innerforce ALC', 
+                    'Persson Powerplay', 'Power G7', 'Primorac Carbon', 'Quantum X Pro', 
+                    'Stratus PowerWood', 'Timo Boll ALC', 'Viscaria', 'Waldner Offensive', 
+                    'Zhang Jike Super ZLC'
+                ];
+                
+            case 'drive_rubber_model':
+                return [
+                    'Acuda Blue P1', 'Acuda Blue P3', 'Battle 2', 'Big Dipper', 'Cross 729', 
+                    'Dignics 05', 'Dignics 09C', 'Evolution MX-P', 'Evolution MX-S', 
+                    'Focus 3', 'Friendship 802-40', 'Hexer HD', 'Hexer Powergrip', 
+                    'Hurricane 3', 'Hurricane 8', 'Omega VII Euro', 'Omega VII Pro', 
+                    'Rakza 7', 'Rakza 9', 'Rhyzer 48', 'Rhyzer 50', 'Rozena', 
+                    'Skyline 3', 'Target Pro GT-H47', 'Target Pro GT-M43', 'Tenergy 05', 
+                    'Tenergy 64', 'Tenergy 80', 'V > 15 Extra', 'V > 20 Double Extra'
+                ];
+                
+            case 'backhand_rubber_model':
+                return [
+                    'Acuda Blue P1', 'Acuda Blue P2', 'Battle 2 Back', 'Cross 729-2', 
+                    'Dignics 05', 'Dignics 80', 'Evolution EL-P', 'Evolution MX-P', 
+                    'Focus Snipe', 'Friendship 729 Super FX', 'Grass D.TecS', 'Hexer Pips+', 
+                    'Hexer Powergrip', 'Hurricane 3 Neo', 'Omega VII Euro', 'Omega VII Pro', 
+                    'Plaxon 450', 'Rakza 7 Soft', 'Rakza X', 'Rhyzer 43', 'Rhyzer 48', 
+                    'Rozena', 'Target Pro GT-M40', 'Target Pro GT-S43', 'Tenergy 05', 
+                    'Tenergy 64', 'Tenergy 80', 'V > 15 Extra', 'V > 20 Double Extra'
+                ];
+                
+            case 'drive_rubber_hardness':
+            case 'backhand_rubber_hardness':
+                return [
+                    'Extra Hard', 'h35', 'h37', 'h39', 'h40', 'h42', 'h44', 'h46', 'h48', 'h50', 
+                    'h52', 'h54', 'Hard', 'Medium', 'N/A', 'Soft'
+                ];
+                
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * Obtener campos de búsqueda según el tipo
+     * ACTUALIZADO: Marcas compartidas, modelos independientes
+     */
+    private function getSearchFieldsForType(string $fieldType): array
+    {
+        switch ($fieldType) {
+            case 'brand':
+                // MARCAS COMPARTIDAS: buscar en todos los campos de marca
+                return [
+                    'racket_brand',
+                    'racket_custom_brand',
+                    'drive_rubber_brand', 
+                    'drive_rubber_custom_brand',
+                    'backhand_rubber_brand',
+                    'backhand_rubber_custom_brand'
+                ];
+                
+            case 'racket_model':
+                // MODELOS INDEPENDIENTES: solo modelos de raqueta
+                return [
+                    'racket_model',
+                    'racket_custom_model'
+                ];
+                
+            case 'drive_rubber_model':
+                // MODELOS INDEPENDIENTES: solo modelos de caucho drive
+                return [
+                    'drive_rubber_model',
+                    'drive_rubber_custom_model'
+                ];
+                
+            case 'backhand_rubber_model':
+                // MODELOS INDEPENDIENTES: solo modelos de caucho back
+                return [
+                    'backhand_rubber_model',
+                    'backhand_rubber_custom_model'
+                ];
+                
+            case 'drive_rubber_hardness':
+                return [
+                    'drive_rubber_hardness',
+                    'drive_rubber_custom_hardness'
+                ];
+                
+            case 'backhand_rubber_hardness':
+                return [
+                    'backhand_rubber_hardness',
+                    'backhand_rubber_custom_hardness'
+                ];
+                
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * Buscar coincidencias exactas
+     */
+    private function findExactMatches(array $searchFields, string $normalizedValue): array
+    {
+        $matches = [];
+        
+        foreach ($searchFields as $field) {
+            $results = DB::table('quick_registrations')
+                ->whereNotNull($field)
+                ->where($field, '!=', '')
+                ->whereRaw("LOWER(TRIM({$field})) = ?", [$normalizedValue])
+                ->pluck($field)
+                ->unique()
+                ->values()
+                ->toArray();
+                
+            $matches = array_merge($matches, $results);
+        }
+        
+        return array_unique($matches);
+    }
+
+    /**
+     * Buscar coincidencias parciales
+     */
+    private function findPartialMatches(array $searchFields, string $normalizedValue): array
+    {
+        $matches = [];
+        
+        foreach ($searchFields as $field) {
+            $results = DB::table('quick_registrations')
+                ->whereNotNull($field)
+                ->where($field, '!=', '')
+                ->whereRaw("LOWER(TRIM({$field})) LIKE ?", ["%{$normalizedValue}%"])
+                ->whereRaw("LOWER(TRIM({$field})) != ?", [$normalizedValue]) // Excluir coincidencias exactas
+                ->pluck($field)
+                ->unique()
+                ->values()
+                ->toArray();
+                
+            $matches = array_merge($matches, $results);
+        }
+        
+        return array_unique($matches);
+    }
+
+    /**
+     * Obtener todas las sugerencias para un tipo de campo
+     */
+    private function getAllSuggestions(array $searchFields, string $query = ''): array
+    {
+        $suggestions = [];
+        
+        foreach ($searchFields as $field) {
+            $queryBuilder = DB::table('quick_registrations')
+                ->whereNotNull($field)
+                ->where($field, '!=', '');
+                
+            if (!empty($query)) {
+                $queryBuilder->whereRaw("LOWER(TRIM({$field})) LIKE ?", ["%".strtolower(trim($query))."%"]);
+            }
+            
+            $results = $queryBuilder
+                ->pluck($field)
+                ->unique()
+                ->values()
+                ->toArray();
+                
+            $suggestions = array_merge($suggestions, $results);
+        }
+        
+        // Eliminar duplicados y ordenar
+        $suggestions = array_unique($suggestions);
+        sort($suggestions);
+        
+        return array_values($suggestions);
     }
 }
