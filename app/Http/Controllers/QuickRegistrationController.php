@@ -173,12 +173,13 @@ class QuickRegistrationController extends Controller
 
     /**
      * NUEVO: Agregar campo personalizado inmediatamente a la base de datos
+     * ACTUALIZADO: Incluir club y league
      */
     public function addCustomField(Request $request): JsonResponse
     {
         try {
             $request->validate([
-                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness',
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
                 'value' => 'required|string|min:2|max:255'
             ]);
 
@@ -225,11 +226,12 @@ class QuickRegistrationController extends Controller
 
     /**
      * NUEVO: Obtener opciones dinámicas para un tipo de campo
+     * ACTUALIZADO: Incluir club y league
      */
     public function getFieldOptions(string $fieldType): JsonResponse
     {
         try {
-            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness'])) {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tipo de campo no válido'
@@ -265,13 +267,13 @@ class QuickRegistrationController extends Controller
 
     /**
      * Validar campos personalizados contra la base de datos
-     * ACTUALIZADO: Incluir tabla custom_fields y marcas compartidas
+     * ACTUALIZADO: Incluir club y league
      */
     public function validateCustomField(Request $request): JsonResponse
     {
         try {
             $request->validate([
-                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness',
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
                 'value' => 'required|string|min:2|max:255'
             ]);
 
@@ -356,12 +358,12 @@ class QuickRegistrationController extends Controller
 
     /**
      * Obtener sugerencias para un tipo de campo
-     * ACTUALIZADO: Incluir custom_fields y marcas compartidas
+     * ACTUALIZADO: Incluir club y league
      */
     public function getFieldSuggestions(Request $request, string $fieldType): JsonResponse
     {
         try {
-            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness'])) {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tipo de campo no válido'
@@ -404,6 +406,7 @@ class QuickRegistrationController extends Controller
 
     /**
      * Obtener opciones predefinidas para un tipo de campo
+     * ACTUALIZADO: Incluir club y league
      */
     private function getPredefinedOptions(string $fieldType): array
     {
@@ -455,6 +458,24 @@ class QuickRegistrationController extends Controller
                     'Extra Hard', 'h35', 'h37', 'h39', 'h40', 'h42', 'h44', 'h46', 'h48', 'h50', 
                     'h52', 'h54', 'Hard', 'Medium', 'N/A', 'Soft'
                 ];
+
+            case 'club':
+                return [
+                    'Amazonas Ping Pong', 'Ambato', 'Azuay TT', 'BackSping', 'Billy Team', 
+                    'Bolívar TT', 'Buena Fe', 'Cañar TT Club', 'Carchi Racket Club', 
+                    'Chimborazo Ping', 'Club Deportivo Loja', 'Costa TT Club', 'Cotopaxi TT', 
+                    'Cuenca', 'El Oro Table Tennis', 'Esmeraldas TT', 'Fede - Manabi', 
+                    'Fede Guayas', 'Fede Santa Elena', 'Galapagos', 'Guayaquil City', 
+                    'Imbabura Racket', 'Independiente', 'Los Ríos TT', 'Manabí Spin', 
+                    'Oriente TT', 'Ping Pong Rick', 'Ping Pro', 'PPH', 'Primorac', 'Quito', 
+                    'Selva TT', 'Sierra Racket', 'Spin Factor', 'Spin Zone', 'TM - Manta', 
+                    'TT Quevedo', 'Tungurahua Ping Pong', 'Uartes'
+                ];
+
+            case 'league':
+                return [
+                    '593LATM', 'Liga Amateur de Tenis de Mesa', 'LATEM'
+                ];
                 
             default:
                 return [];
@@ -463,7 +484,7 @@ class QuickRegistrationController extends Controller
 
     /**
      * Obtener campos de búsqueda según el tipo
-     * ACTUALIZADO: Marcas compartidas, modelos independientes
+     * ACTUALIZADO: Incluir club y league
      */
     private function getSearchFieldsForType(string $fieldType): array
     {
@@ -510,6 +531,17 @@ class QuickRegistrationController extends Controller
                 return [
                     'backhand_rubber_hardness',
                     'backhand_rubber_custom_hardness'
+                ];
+
+            case 'club':
+                return [
+                    'club_name',
+                    'custom_club_name'
+                ];
+
+            case 'league':
+                return [
+                    'league'
                 ];
                 
             default:

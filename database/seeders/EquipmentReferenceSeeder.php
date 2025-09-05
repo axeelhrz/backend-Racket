@@ -88,7 +88,7 @@ class EquipmentReferenceSeeder extends Seeder
         ];
 
         foreach ($ttClubs as $club) {
-            DB::table('tt_club_references')->updateOrInsert(
+            DB::table('tt_clubs_reference')->updateOrInsert(
                 ['name' => $club['name'], 'city' => $club['city']],
                 $club + ['created_at' => now(), 'updated_at' => now()]
             );
