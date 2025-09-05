@@ -37,9 +37,8 @@ class QuickRegistrationController extends Controller
                 
                 // League and club
                 'league' => 'nullable|string|max:255',
-                'league_custom' => 'nullable|string|max:255',
                 'club_name' => 'nullable|string|max:255',
-                'club_name_custom' => 'nullable|string|max:255',
+                'custom_club_name' => 'nullable|string|max:255',
                 'ranking' => 'nullable|string|max:50',
                 
                 // Playing style
@@ -49,8 +48,8 @@ class QuickRegistrationController extends Controller
                 // Racket
                 'racket_brand' => 'nullable|string|max:255',
                 'racket_model' => 'nullable|string|max:255',
-                'custom_racket_brand' => 'nullable|string|max:255',
-                'custom_racket_model' => 'nullable|string|max:255',
+                'racket_custom_brand' => 'nullable|string|max:255',
+                'racket_custom_model' => 'nullable|string|max:255',
                 
                 // Drive rubber
                 'drive_rubber_brand' => 'nullable|string|max:255',
@@ -59,9 +58,9 @@ class QuickRegistrationController extends Controller
                 'drive_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
                 'drive_rubber_sponge' => 'nullable|string|max:10',
                 'drive_rubber_hardness' => 'nullable|string|max:50',
-                'custom_drive_rubber_brand' => 'nullable|string|max:255',
-                'custom_drive_rubber_model' => 'nullable|string|max:255',
-                'custom_drive_rubber_hardness' => 'nullable|string|max:50',
+                'drive_rubber_custom_brand' => 'nullable|string|max:255',
+                'drive_rubber_custom_model' => 'nullable|string|max:255',
+                'drive_rubber_custom_hardness' => 'nullable|string|max:50',
                 
                 // Backhand rubber
                 'backhand_rubber_brand' => 'nullable|string|max:255',
@@ -70,9 +69,9 @@ class QuickRegistrationController extends Controller
                 'backhand_rubber_color' => 'nullable|in:negro,rojo,verde,azul,amarillo,morado,fucsia',
                 'backhand_rubber_sponge' => 'nullable|string|max:10',
                 'backhand_rubber_hardness' => 'nullable|string|max:50',
-                'custom_backhand_rubber_brand' => 'nullable|string|max:255',
-                'custom_backhand_rubber_model' => 'nullable|string|max:255',
-                'custom_backhand_rubber_hardness' => 'nullable|string|max:50',
+                'backhand_rubber_custom_brand' => 'nullable|string|max:255',
+                'backhand_rubber_custom_model' => 'nullable|string|max:255',
+                'backhand_rubber_custom_hardness' => 'nullable|string|max:50',
                 
                 // Additional info
                 'notes' => 'nullable|string|max:1000',
@@ -81,22 +80,10 @@ class QuickRegistrationController extends Controller
                 'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // 5MB max
             ]);
 
-            // Handle custom club name - MEJORADO: Soporte para club personalizado
-            if ($request->club_name === 'other' && $request->club_name_custom) {
-                $validatedData['club_name'] = $request->club_name_custom;
-                // Agregar automáticamente el club personalizado a la base de datos
-                CustomField::addOrUpdate('club', $request->club_name_custom);
+            // Handle custom club name
+            if ($request->club_name === 'custom' && $request->custom_club_name) {
+                $validatedData['club_name'] = $request->custom_club_name;
             }
-
-            // Handle custom league - MEJORADO: Soporte para liga personalizada
-            if ($request->league === 'other' && $request->league_custom) {
-                $validatedData['league'] = $request->league_custom;
-                // Agregar automáticamente la liga personalizada a la base de datos
-                CustomField::addOrUpdate('league', $request->league_custom);
-            }
-
-            // Handle custom fields automatically - NUEVO: Agregar campos personalizados automáticamente
-            $this->handleCustomFields($request);
 
             // Generate unique registration code
             do {
@@ -134,29 +121,6 @@ class QuickRegistrationController extends Controller
                 'success' => false,
                 'message' => 'Error interno del servidor'
             ], 500);
-        }
-    }
-
-    /**
-     * NUEVO: Manejar campos personalizados automáticamente
-     */
-    private function handleCustomFields(Request $request): void
-    {
-        $customFieldMappings = [
-            'custom_racket_brand' => 'brand',
-            'custom_racket_model' => 'racket_model',
-            'custom_drive_rubber_brand' => 'brand',
-            'custom_drive_rubber_model' => 'drive_rubber_model',
-            'custom_backhand_rubber_brand' => 'brand',
-            'custom_backhand_rubber_model' => 'backhand_rubber_model',
-            'custom_drive_rubber_hardness' => 'drive_rubber_hardness',
-            'custom_backhand_rubber_hardness' => 'backhand_rubber_hardness',
-        ];
-
-        foreach ($customFieldMappings as $requestField => $fieldType) {
-            if ($request->filled($requestField)) {
-                CustomField::addOrUpdate($fieldType, $request->input($requestField));
-            }
         }
     }
 
@@ -208,27 +172,24 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * MEJORADO: Agregar campo personalizado inmediatamente a la base de datos
-     * Incluye mejor validación y manejo de errores para clubes y ligas
+     * NUEVO: Agregar campo personalizado inmediatamente a la base de datos
+     * ACTUALIZADO: Incluir club y league
      */
     public function addCustomField(Request $request): JsonResponse
     {
         try {
             $request->validate([
-                'field_type' => 'required|string|in:brand,racket_model,rubber_drive_model,rubber_back_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
                 'value' => 'required|string|min:2|max:255'
             ]);
 
             $fieldType = $request->field_type;
             $value = trim($request->value);
 
-            // Normalizar nombres de tipos de campo para compatibilidad
-            $normalizedFieldType = $this->normalizeFieldType($fieldType);
-
             // Verificar si ya existe
-            if (CustomField::exists($normalizedFieldType, $value)) {
+            if (CustomField::exists($fieldType, $value)) {
                 // Ya existe, solo incrementar contador
-                $field = CustomField::addOrUpdate($normalizedFieldType, $value);
+                $field = CustomField::addOrUpdate($fieldType, $value);
                 
                 return response()->json([
                     'success' => true,
@@ -239,10 +200,7 @@ class QuickRegistrationController extends Controller
             }
 
             // Agregar nuevo campo
-            $field = CustomField::addOrUpdate($normalizedFieldType, $value);
-
-            // Log para debugging
-            \Log::info("Campo personalizado agregado: {$normalizedFieldType} = {$value}");
+            $field = CustomField::addOrUpdate($fieldType, $value);
 
             return response()->json([
                 'success' => true,
@@ -267,15 +225,13 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * MEJORADO: Obtener opciones dinámicas para un tipo de campo
-     * Incluye mejor soporte para clubes y ligas
+     * NUEVO: Obtener opciones dinámicas para un tipo de campo
+     * ACTUALIZADO: Incluir club y league
      */
     public function getFieldOptions(string $fieldType): JsonResponse
     {
         try {
-            $normalizedFieldType = $this->normalizeFieldType($fieldType);
-            
-            if (!in_array($normalizedFieldType, ['brand', 'racket_model', 'rubber_drive_model', 'rubber_back_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tipo de campo no válido'
@@ -283,10 +239,10 @@ class QuickRegistrationController extends Controller
             }
 
             // Obtener opciones predefinidas
-            $predefinedOptions = $this->getPredefinedOptions($normalizedFieldType);
+            $predefinedOptions = $this->getPredefinedOptions($fieldType);
             
             // Obtener opciones personalizadas de la base de datos
-            $customOptions = CustomField::getValuesForType($normalizedFieldType);
+            $customOptions = CustomField::getValuesForType($fieldType);
             
             // Combinar y eliminar duplicados
             $allOptions = array_unique(array_merge($predefinedOptions, $customOptions));
@@ -310,18 +266,18 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * MEJORADO: Validar campos personalizados contra la base de datos
-     * Incluye mejor soporte para clubes y ligas
+     * Validar campos personalizados contra la base de datos
+     * ACTUALIZADO: Incluir club y league
      */
     public function validateCustomField(Request $request): JsonResponse
     {
         try {
             $request->validate([
-                'field_type' => 'required|string|in:brand,racket_model,rubber_drive_model,rubber_back_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
+                'field_type' => 'required|string|in:brand,racket_model,drive_rubber_model,backhand_rubber_model,drive_rubber_hardness,backhand_rubber_hardness,club,league',
                 'value' => 'required|string|min:2|max:255'
             ]);
 
-            $fieldType = $this->normalizeFieldType($request->field_type);
+            $fieldType = $request->field_type;
             $value = trim($request->value);
             $normalizedValue = strtolower($value);
 
@@ -401,15 +357,13 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * MEJORADO: Obtener sugerencias para un tipo de campo
-     * Incluye mejor soporte para clubes y ligas
+     * Obtener sugerencias para un tipo de campo
+     * ACTUALIZADO: Incluir club y league
      */
     public function getFieldSuggestions(Request $request, string $fieldType): JsonResponse
     {
         try {
-            $normalizedFieldType = $this->normalizeFieldType($fieldType);
-            
-            if (!in_array($normalizedFieldType, ['brand', 'racket_model', 'rubber_drive_model', 'rubber_back_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
+            if (!in_array($fieldType, ['brand', 'racket_model', 'drive_rubber_model', 'backhand_rubber_model', 'drive_rubber_hardness', 'backhand_rubber_hardness', 'club', 'league'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tipo de campo no válido'
@@ -421,13 +375,13 @@ class QuickRegistrationController extends Controller
             // Obtener sugerencias de custom_fields
             $customSuggestions = [];
             if (!empty($query)) {
-                $customSuggestions = CustomField::findSimilar($normalizedFieldType, $query);
+                $customSuggestions = CustomField::findSimilar($fieldType, $query);
             } else {
-                $customSuggestions = CustomField::getValuesForType($normalizedFieldType);
+                $customSuggestions = CustomField::getValuesForType($fieldType);
             }
             
             // Obtener sugerencias de registros existentes
-            $searchFields = $this->getSearchFieldsForType($normalizedFieldType);
+            $searchFields = $this->getSearchFieldsForType($fieldType);
             $registrationSuggestions = $this->getAllSuggestions($searchFields, $query);
             
             // Combinar y eliminar duplicados
@@ -451,21 +405,8 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * NUEVO: Normalizar tipos de campo para compatibilidad
-     */
-    private function normalizeFieldType(string $fieldType): string
-    {
-        $mappings = [
-            'rubber_drive_model' => 'drive_rubber_model',
-            'rubber_back_model' => 'backhand_rubber_model',
-        ];
-
-        return $mappings[$fieldType] ?? $fieldType;
-    }
-
-    /**
-     * MEJORADO: Obtener opciones predefinidas para un tipo de campo
-     * Incluye clubes y ligas actualizados
+     * Obtener opciones predefinidas para un tipo de campo
+     * ACTUALIZADO: Incluir club y league
      */
     private function getPredefinedOptions(string $fieldType): array
     {
@@ -533,9 +474,7 @@ class QuickRegistrationController extends Controller
 
             case 'league':
                 return [
-                    '593LATM', 'Liga Amateur de Tenis de Mesa', 'LATEM', 'Liga Provincial de Pichincha',
-                    'Liga Provincial de Guayas', 'Liga Provincial de Azuay', 'Liga Provincial de Manabí',
-                    'Liga Provincial de El Oro', 'Liga Provincial de Los Ríos', 'Liga Provincial de Tungurahua'
+                    '593LATM', 'Liga Amateur de Tenis de Mesa', 'LATEM'
                 ];
                 
             default:
@@ -544,8 +483,8 @@ class QuickRegistrationController extends Controller
     }
 
     /**
-     * MEJORADO: Obtener campos de búsqueda según el tipo
-     * Incluye mejor soporte para clubes y ligas
+     * Obtener campos de búsqueda según el tipo
+     * ACTUALIZADO: Incluir club y league
      */
     private function getSearchFieldsForType(string $fieldType): array
     {
@@ -554,56 +493,55 @@ class QuickRegistrationController extends Controller
                 // MARCAS COMPARTIDAS: buscar en todos los campos de marca
                 return [
                     'racket_brand',
-                    'custom_racket_brand',
+                    'racket_custom_brand',
                     'drive_rubber_brand', 
-                    'custom_drive_rubber_brand',
+                    'drive_rubber_custom_brand',
                     'backhand_rubber_brand',
-                    'custom_backhand_rubber_brand'
+                    'backhand_rubber_custom_brand'
                 ];
                 
             case 'racket_model':
                 // MODELOS INDEPENDIENTES: solo modelos de raqueta
                 return [
                     'racket_model',
-                    'custom_racket_model'
+                    'racket_custom_model'
                 ];
                 
             case 'drive_rubber_model':
                 // MODELOS INDEPENDIENTES: solo modelos de caucho drive
                 return [
                     'drive_rubber_model',
-                    'custom_drive_rubber_model'
+                    'drive_rubber_custom_model'
                 ];
                 
             case 'backhand_rubber_model':
                 // MODELOS INDEPENDIENTES: solo modelos de caucho back
                 return [
                     'backhand_rubber_model',
-                    'custom_backhand_rubber_model'
+                    'backhand_rubber_custom_model'
                 ];
                 
             case 'drive_rubber_hardness':
                 return [
                     'drive_rubber_hardness',
-                    'custom_drive_rubber_hardness'
+                    'drive_rubber_custom_hardness'
                 ];
                 
             case 'backhand_rubber_hardness':
                 return [
                     'backhand_rubber_hardness',
-                    'custom_backhand_rubber_hardness'
+                    'backhand_rubber_custom_hardness'
                 ];
 
             case 'club':
                 return [
                     'club_name',
-                    'club_name_custom'
+                    'custom_club_name'
                 ];
 
             case 'league':
                 return [
-                    'league',
-                    'league_custom'
+                    'league'
                 ];
                 
             default:
