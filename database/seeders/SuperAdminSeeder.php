@@ -33,5 +33,26 @@ class SuperAdminSeeder extends Seeder
         } else {
             $this->command->info('Super Admin already exists.');
         }
+
+        // Create additional test admin user for development
+        $testAdmin = User::where('email', 'admin@admin.com')->first();
+        
+        if (!$testAdmin) {
+            User::create([
+                'name' => 'Test Administrator',
+                'email' => 'admin@admin.com',
+                'password' => Hash::make('admin123456'),
+                'role' => 'super_admin',
+                'phone' => '+593 99 888 8888',
+                'country' => 'Ecuador',
+                'email_verified_at' => now(),
+            ]);
+
+            $this->command->info('Test Admin created successfully!');
+            $this->command->info('Email: admin@admin.com');
+            $this->command->info('Password: admin123456');
+        } else {
+            $this->command->info('Test Admin already exists.');
+        }
     }
 }
