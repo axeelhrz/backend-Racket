@@ -12,37 +12,40 @@ class Tournament extends Model
     use HasFactory;
 
     protected $fillable = [
-        // Basic fields
+        // Basic required fields
         'name',
         'description',
         'code',
         'tournament_type',
-        'country',
-        'province',
-        'city',
-        'club_name',
-        'club_address',
-        'club_id',
-        'image',
-        'league_id',
-        'sport_id',
         'start_date',
         'end_date',
         'registration_deadline',
         'max_participants',
         'current_participants',
         'entry_fee',
-        'prize_pool',
-        'tournament_format',
-        'location',
-        'rules',
         'status',
+        'tournament_format',
+        'club_id',
+        'league_id',
+        'sport_id',
+        
+        // Location fields
+        'country',
+        'province',
+        'city',
+        'club_name',
+        'club_address',
+        'location',
+        'image',
+        
+        // Tournament configuration
+        'prize_pool',
+        'rules',
         'matches_played',
         'matches_total',
         
         // Individual tournament fields
         'modality',
-        'elimination_type',
         'match_type',
         'seeding_type',
         'ranking_filter',
@@ -59,7 +62,6 @@ class Tournament extends Model
         'reminder_days',
         
         // Team tournament fields
-        'team_size',
         'team_modality',
         'team_match_type',
         'team_elimination_type',
@@ -82,6 +84,7 @@ class Tournament extends Model
         'team_reminder_days',
         'gender_restriction',
         'skill_level',
+        'team_size',
         
         // Prize fields
         'first_prize',
@@ -91,22 +94,26 @@ class Tournament extends Model
         'fifth_prize',
         
         // Contact fields
+        'contact',
+        'phone',
+        'ball_info',
         'contact_name',
-        'contact_phone',
-        'ball_info'
+        'contact_phone'
     ];
 
     protected $casts = [
-        'start_date' => 'date',
-        'end_date' => 'date',
-        'registration_deadline' => 'date',
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
+        'registration_deadline' => 'datetime',
         'entry_fee' => 'decimal:2',
         'prize_pool' => 'decimal:2',
         'current_participants' => 'integer',
         'max_participants' => 'integer',
         'matches_played' => 'integer',
         'matches_total' => 'integer',
-        'modality' => 'boolean',
+        'code' => 'string',
+        
+        // Boolean fields
         'ranking_filter' => 'boolean',
         'age_filter' => 'boolean',
         'affects_ranking' => 'boolean',
@@ -119,20 +126,21 @@ class Tournament extends Model
         'team_draw_lottery' => 'boolean',
         'team_system_invitation' => 'boolean',
         'team_scheduled_reminder' => 'boolean',
+        
+        // Array fields
         'categories' => 'array',
-        'min_ranking' => 'integer',
-        'max_ranking' => 'integer',
+        
+        // Integer fields
         'min_age' => 'integer',
         'max_age' => 'integer',
         'players_per_team' => 'integer',
         'max_ranking_between_players' => 'integer',
         'number_of_teams' => 'integer',
-        'team_min_ranking' => 'integer',
-        'team_max_ranking' => 'integer',
         'team_min_age' => 'integer',
         'team_max_age' => 'integer',
         'reminder_days' => 'integer',
-        'team_reminder_days' => 'integer'
+        'team_reminder_days' => 'integer',
+        'team_size' => 'integer'
     ];
 
     /**
@@ -168,104 +176,57 @@ class Tournament extends Model
     }
 
     /**
-     * Scope a query to only include tournaments for a specific league.
+     * Check if a tournament code already exists.
      */
-    public function scopeForLeague($query, $leagueId)
+    public static function codeExists($code, $excludeId = null)
     {
-        return $query->where('league_id', $leagueId);
+        $query = self::where('code', (string)$code);
+        
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+        
+        return $query->exists();
     }
 
     /**
-     * Scope a query to only include tournaments for a specific club.
+     * Generate a unique numeric tournament code.
      */
-    public function scopeForClub($query, $clubId)
+    public static function generateUniqueCode()
     {
-        return $query->where('club_id', $clubId);
+        do {
+            // Generate a 6-digit random number as string
+            $code = (string)rand(100000, 999999);
+        } while (self::codeExists($code));
+        
+        return $code;
     }
 
     /**
-     * Scope a query to only include tournaments with a specific status.
-     */
-    public function scopeWithStatus($query, $status)
-    {
-        return $query->where('status', $status);
-    }
-
-    /**
-     * Scope a query to only include tournaments of a specific type.
-     */
-    public function scopeOfType($query, $type)
-    {
-        return $query->where('type', $type);
-    }
-
-    /**
-     * Get the status badge color.
+     * Get the status color for UI display
      */
     public function getStatusColorAttribute()
     {
         return match($this->status) {
-            'upcoming' => 'blue',
-            'active' => 'green',
-            'completed' => 'gray',
-            'cancelled' => 'red',
-            default => 'gray'
+            'upcoming' => 'info',
+            'active' => 'success',
+            'completed' => 'primary',
+            'cancelled' => 'error',
+            default => 'default'
         };
     }
 
     /**
-     * Get the formatted entry fee.
+     * Get the status label for UI display
      */
-    public function getFormattedEntryFeeAttribute()
+    public function getStatusLabelAttribute()
     {
-        return '$' . number_format($this->entry_fee, 2);
-    }
-
-    /**
-     * Get the formatted prize pool.
-     */
-    public function getFormattedPrizePoolAttribute()
-    {
-        return '$' . number_format($this->prize_pool, 2);
-    }
-
-    /**
-     * Get the tournament type label.
-     */
-    public function getTypeLabel()
-    {
-        return $this->type === 'individual' ? 'Individual' : 'Por Equipos';
-    }
-
-    /**
-     * Get the modality label for individual tournaments.
-     */
-    public function getModalityLabel()
-    {
-        return $this->modality ? 'Singles' : 'Dobles';
-    }
-
-    /**
-     * Get the elimination type label.
-     */
-    public function getEliminationTypeLabel()
-    {
-        if ($this->type === 'team') {
-            return match($this->team_elimination_type) {
-                'groups' => 'Por Grupos',
-                'direct_elimination' => 'Eliminación Directa',
-                'round_robin' => 'Todos contra Todos',
-                'mixed' => 'Mixto',
-                default => $this->team_elimination_type
-            };
-        }
-
-        return match($this->tournament_type) {
-            'single_elimination' => 'Eliminación Simple',
-            'double_elimination' => 'Eliminación Doble',
-            'round_robin' => 'Todos contra Todos',
-            'swiss' => 'Sistema Suizo',
-            default => $this->tournament_type
+        return match($this->status) {
+            'upcoming' => 'Próximo',
+            'active' => 'Activo',
+            'completed' => 'Completado',
+            'cancelled' => 'Cancelado',
+            default => ucfirst($this->status)
         };
     }
 }

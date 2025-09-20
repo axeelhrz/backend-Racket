@@ -15,7 +15,7 @@ return new class extends Migration
             // Basic tournament fields
             $table->string('code')->nullable()->after('id');
             $table->string('type')->default('individual')->after('code'); // individual or team
-            $table->string('country')->default('Argentina')->after('type');
+            $table->string('country')->default('Ecuador')->after('type');
             $table->string('province')->nullable()->after('country');
             $table->string('city')->nullable()->after('province');
             $table->string('club_name')->nullable()->after('city');
