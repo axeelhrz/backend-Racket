@@ -12,36 +12,60 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tournament_participants', function (Blueprint $table) {
-            // Add user information columns (member_id already exists from original table)
+            // Add member_id if it doesn't exist (with foreign key constraint)
+            if (!Schema::hasColumn('tournament_participants', 'member_id')) {
+                $table->unsignedBigInteger('member_id')->nullable();
+                $table->foreign('member_id')->references('id')->on('members')->onDelete('cascade');
+            }
+            
+            // Add user information columns
             if (!Schema::hasColumn('tournament_participants', 'user_name')) {
-                $table->string('user_name')->nullable()->after('member_id');
+                $table->string('user_name')->nullable();
             }
             if (!Schema::hasColumn('tournament_participants', 'user_email')) {
-                $table->string('user_email')->nullable()->after('user_name');
+                $table->string('user_email')->nullable();
             }
             if (!Schema::hasColumn('tournament_participants', 'user_phone')) {
-                $table->string('user_phone')->nullable()->after('user_email');
+                $table->string('user_phone')->nullable();
             }
             if (!Schema::hasColumn('tournament_participants', 'ranking')) {
-                $table->string('ranking')->nullable()->after('user_phone');
+                $table->string('ranking')->nullable();
             }
             
-            // Update status enum to include new values while preserving existing ones
-            if (Schema::hasColumn('tournament_participants', 'status')) {
-                // Drop the existing status column and recreate with new enum values
-                $table->dropColumn('status');
-            }
-            
-            // Add the updated status column with all possible values
-            $table->enum('status', ['registered', 'confirmed', 'withdrawn', 'disqualified', 'pending', 'rejected', 'waiting_list'])
-                  ->default('registered')
-                  ->after('ranking');
-            
-            // Add new columns
+            // Add custom_fields if it doesn't exist
             if (!Schema::hasColumn('tournament_participants', 'custom_fields')) {
-                $table->json('custom_fields')->nullable()->after('notes');
+                $table->json('custom_fields')->nullable();
             }
+            
+            // Update status enum if needed - but be careful with existing data
+            // We'll handle this separately to avoid data loss
         });
+        
+        // Handle status column update separately to preserve existing data
+        $this->updateStatusColumn();
+    }
+    
+    /**
+     * Update the status column to include new enum values
+     */
+    private function updateStatusColumn(): void
+    {
+        // Check current status column type
+        $columns = \DB::select("SHOW COLUMNS FROM tournament_participants WHERE Field = 'status'");
+        
+        if (!empty($columns)) {
+            $currentType = $columns[0]->Type;
+            
+            // If it's already the enum we want, skip
+            if (strpos($currentType, 'pending') !== false && 
+                strpos($currentType, 'rejected') !== false && 
+                strpos($currentType, 'waiting_list') !== false) {
+                return;
+            }
+        }
+        
+        // Update the enum to include all values
+        \DB::statement("ALTER TABLE tournament_participants MODIFY COLUMN status ENUM('registered', 'confirmed', 'withdrawn', 'disqualified', 'pending', 'rejected', 'waiting_list') DEFAULT 'registered'");
     }
 
     /**
@@ -50,7 +74,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('tournament_participants', function (Blueprint $table) {
-            // Remove the columns we added (but keep member_id as it was in original table)
+            // Remove columns we added, but be careful about member_id
             $columns_to_drop = [];
             
             if (Schema::hasColumn('tournament_participants', 'user_name')) {
@@ -73,13 +97,17 @@ return new class extends Migration
                 $table->dropColumn($columns_to_drop);
             }
             
-            // Restore original status enum
-            if (Schema::hasColumn('tournament_participants', 'status')) {
-                $table->dropColumn('status');
+            // Only drop member_id if it was added by this migration
+            // Check if the original create table migration exists
+            $originalMigrationExists = file_exists(database_path('migrations/2025_08_18_023002_create_tournament_participants_table.php'));
+            
+            if (!$originalMigrationExists && Schema::hasColumn('tournament_participants', 'member_id')) {
+                $table->dropForeign(['member_id']);
+                $table->dropColumn('member_id');
             }
-            $table->enum('status', ['registered', 'confirmed', 'withdrawn', 'disqualified'])
-                  ->default('registered')
-                  ->after('registration_date');
         });
+        
+        // Restore original status enum
+        \DB::statement("ALTER TABLE tournament_participants MODIFY COLUMN status ENUM('registered', 'confirmed', 'withdrawn', 'disqualified') DEFAULT 'registered'");
     }
 };
