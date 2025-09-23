@@ -12,10 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tournament_participants', function (Blueprint $table) {
-            // Add columns that don't exist yet
-            if (!Schema::hasColumn('tournament_participants', 'member_id')) {
-                $table->unsignedBigInteger('member_id')->nullable()->after('tournament_id');
-            }
+            // Add user information columns (member_id already exists from original table)
             if (!Schema::hasColumn('tournament_participants', 'user_name')) {
                 $table->string('user_name')->nullable()->after('member_id');
             }
@@ -28,15 +25,19 @@ return new class extends Migration
             if (!Schema::hasColumn('tournament_participants', 'ranking')) {
                 $table->string('ranking')->nullable()->after('user_phone');
             }
-            if (!Schema::hasColumn('tournament_participants', 'status')) {
-                $table->enum('status', ['pending', 'confirmed', 'rejected', 'waiting_list'])->default('pending')->after('ranking');
+            
+            // Update status enum to include new values while preserving existing ones
+            if (Schema::hasColumn('tournament_participants', 'status')) {
+                // Drop the existing status column and recreate with new enum values
+                $table->dropColumn('status');
             }
-            if (!Schema::hasColumn('tournament_participants', 'registration_date')) {
-                $table->timestamp('registration_date')->nullable()->after('status');
-            }
-            if (!Schema::hasColumn('tournament_participants', 'notes')) {
-                $table->text('notes')->nullable()->after('registration_date');
-            }
+            
+            // Add the updated status column with all possible values
+            $table->enum('status', ['registered', 'confirmed', 'withdrawn', 'disqualified', 'pending', 'rejected', 'waiting_list'])
+                  ->default('registered')
+                  ->after('ranking');
+            
+            // Add new columns
             if (!Schema::hasColumn('tournament_participants', 'custom_fields')) {
                 $table->json('custom_fields')->nullable()->after('notes');
             }
@@ -49,17 +50,36 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('tournament_participants', function (Blueprint $table) {
-            $table->dropColumn([
-                'member_id',
-                'user_name', 
-                'user_email',
-                'user_phone',
-                'ranking',
-                'status',
-                'registration_date',
-                'notes',
-                'custom_fields'
-            ]);
+            // Remove the columns we added (but keep member_id as it was in original table)
+            $columns_to_drop = [];
+            
+            if (Schema::hasColumn('tournament_participants', 'user_name')) {
+                $columns_to_drop[] = 'user_name';
+            }
+            if (Schema::hasColumn('tournament_participants', 'user_email')) {
+                $columns_to_drop[] = 'user_email';
+            }
+            if (Schema::hasColumn('tournament_participants', 'user_phone')) {
+                $columns_to_drop[] = 'user_phone';
+            }
+            if (Schema::hasColumn('tournament_participants', 'ranking')) {
+                $columns_to_drop[] = 'ranking';
+            }
+            if (Schema::hasColumn('tournament_participants', 'custom_fields')) {
+                $columns_to_drop[] = 'custom_fields';
+            }
+            
+            if (!empty($columns_to_drop)) {
+                $table->dropColumn($columns_to_drop);
+            }
+            
+            // Restore original status enum
+            if (Schema::hasColumn('tournament_participants', 'status')) {
+                $table->dropColumn('status');
+            }
+            $table->enum('status', ['registered', 'confirmed', 'withdrawn', 'disqualified'])
+                  ->default('registered')
+                  ->after('registration_date');
         });
     }
 };
