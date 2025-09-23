@@ -487,4 +487,27 @@ class MemberController extends Controller
 
         return response()->json($stats);
     }
+
+    /**
+     * Get all active clubs for member selection
+     */
+    public function getAvailableClubs(): JsonResponse
+    {
+        try {
+            $clubs = Club::with('league')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(['id', 'name', 'city', 'province', 'league_id']);
+
+            return response()->json([
+                'data' => $clubs,
+                'message' => 'Available clubs retrieved successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error fetching available clubs: ' . $e->getMessage(),
+                'data' => []
+            ], 500);
+        }
+    }
 }

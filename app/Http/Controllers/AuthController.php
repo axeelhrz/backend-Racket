@@ -413,15 +413,22 @@ class AuthController extends Controller
      */
     public function getAvailableLeagues(): JsonResponse
     {
-        $leagues = League::active()
-            ->select('id', 'name', 'region', 'province')
-            ->orderBy('name')
-            ->get();
+        try {
+            $leagues = League::where('status', 'active')
+                ->select('id', 'name', 'region', 'province')
+                ->orderBy('name')
+                ->get();
 
-        return response()->json([
-            'data' => $leagues,
-            'message' => 'Ligas disponibles obtenidas exitosamente',
-        ]);
+            return response()->json([
+                'data' => $leagues,
+                'message' => 'Ligas disponibles obtenidas exitosamente',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error al obtener ligas: ' . $e->getMessage(),
+                'data' => []
+            ], 500);
+        }
     }
 
     /**
@@ -429,21 +436,28 @@ class AuthController extends Controller
      */
     public function getAvailableClubs(Request $request): JsonResponse
     {
-        $query = Club::active()
-            ->with('league:id,name')
-            ->select('id', 'name', 'city', 'league_id')
-            ->orderBy('name');
+        try {
+            $query = Club::with('league:id,name')
+                ->where('status', 'active')
+                ->select('id', 'name', 'city', 'province', 'league_id')
+                ->orderBy('name');
 
-        // Filtrar por liga si se proporciona
-        if ($request->has('league_id')) {
-            $query->where('league_id', $request->league_id);
+            // Filtrar por liga si se proporciona
+            if ($request->has('league_id') && $request->league_id) {
+                $query->where('league_id', $request->league_id);
+            }
+
+            $clubs = $query->get();
+
+            return response()->json([
+                'data' => $clubs,
+                'message' => 'Clubes disponibles obtenidos exitosamente',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error al obtener clubes: ' . $e->getMessage(),
+                'data' => []
+            ], 500);
         }
-
-        $clubs = $query->get();
-
-        return response()->json([
-            'data' => $clubs,
-            'message' => 'Clubes disponibles obtenidos exitosamente',
-        ]);
     }
 }
