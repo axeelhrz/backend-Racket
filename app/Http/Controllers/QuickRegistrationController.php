@@ -825,4 +825,226 @@ class QuickRegistrationController extends Controller
                 return $playingStyle;
         }
     }
+
+    /**
+     * NUEVO: Obtener clubes existentes de la base de datos
+     */
+    public function getExistingClubs(Request $request): JsonResponse
+    {
+        try {
+            $query = $request->query('search', '');
+            $province = $request->query('province', '');
+            $city = $request->query('city', '');
+            $limit = min($request->query('limit', 50), 100); // Máximo 100 resultados
+
+            // Obtener clubes de la base de datos
+            $clubsQuery = DB::table('clubs')
+                ->select('name', 'city', 'province', 'country', 'status')
+                ->where('status', 'active');
+
+            // Filtrar por búsqueda de texto
+            if (!empty($query)) {
+                $clubsQuery->where(function($q) use ($query) {
+                    $q->whereRaw("LOWER(name) LIKE ?", ['%' . strtolower($query) . '%'])
+                      ->orWhereRaw("LOWER(city) LIKE ?", ['%' . strtolower($query) . '%']);
+                });
+            }
+
+            // Filtrar por provincia
+            if (!empty($province)) {
+                $clubsQuery->where('province', $province);
+            }
+
+            // Filtrar por ciudad
+            if (!empty($city)) {
+                $clubsQuery->where('city', $city);
+            }
+
+            $existingClubs = $clubsQuery
+                ->orderBy('name')
+                ->limit($limit)
+                ->get()
+                ->map(function($club) {
+                    return [
+                        'name' => $club->name,
+                        'city' => $club->city,
+                        'province' => $club->province,
+                        'country' => $club->country ?? 'Ecuador',
+                        'display_name' => $club->name . ' (' . $club->city . ', ' . $club->province . ')',
+                        'source' => 'database',
+                        'is_existing' => true
+                    ];
+                })
+                ->toArray();
+
+            // Obtener clubes predefinidos
+            $predefinedClubs = $this->getPredefinedOptions('club');
+            $predefinedClubsFormatted = array_map(function($club) {
+                return [
+                    'name' => $club,
+                    'city' => null,
+                    'province' => null,
+                    'country' => 'Ecuador',
+                    'display_name' => $club,
+                    'source' => 'predefined',
+                    'is_existing' => false
+                ];
+            }, $predefinedClubs);
+
+            // Filtrar clubes predefinidos si hay búsqueda
+            if (!empty($query)) {
+                $predefinedClubsFormatted = array_filter($predefinedClubsFormatted, function($club) use ($query) {
+                    return stripos($club['name'], $query) !== false;
+                });
+            }
+
+            // Combinar y eliminar duplicados por nombre
+            $allClubs = array_merge($existingClubs, $predefinedClubsFormatted);
+            $uniqueClubs = [];
+            $seenNames = [];
+
+            foreach ($allClubs as $club) {
+                $normalizedName = strtolower(trim($club['name']));
+                if (!in_array($normalizedName, $seenNames)) {
+                    $uniqueClubs[] = $club;
+                    $seenNames[] = $normalizedName;
+                }
+            }
+
+            // Ordenar: primero clubes de la base de datos, luego predefinidos
+            usort($uniqueClubs, function($a, $b) {
+                if ($a['source'] !== $b['source']) {
+                    return $a['source'] === 'database' ? -1 : 1;
+                }
+                return strcmp($a['name'], $b['name']);
+            });
+
+            return response()->json([
+                'success' => true,
+                'clubs' => array_values($uniqueClubs),
+                'total_count' => count($uniqueClubs),
+                'database_count' => count($existingClubs),
+                'predefined_count' => count($predefinedClubsFormatted),
+                'filters_applied' => [
+                    'search' => $query,
+                    'province' => $province,
+                    'city' => $city
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting existing clubs: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener clubes existentes'
+            ], 500);
+        }
+    }
+
+    /**
+     * NUEVO: Obtener ligas existentes de la base de datos
+     */
+    public function getExistingLeagues(Request $request): JsonResponse
+    {
+        try {
+            $query = $request->query('search', '');
+            $province = $request->query('province', '');
+            $limit = min($request->query('limit', 50), 100);
+
+            // Obtener ligas de la base de datos
+            $leaguesQuery = DB::table('leagues')
+                ->select('name', 'province', 'region', 'status')
+                ->where('status', 'active');
+
+            // Filtrar por búsqueda de texto
+            if (!empty($query)) {
+                $leaguesQuery->where(function($q) use ($query) {
+                    $q->whereRaw("LOWER(name) LIKE ?", ['%' . strtolower($query) . '%'])
+                      ->orWhereRaw("LOWER(province) LIKE ?", ['%' . strtolower($query) . '%'])
+                      ->orWhereRaw("LOWER(region) LIKE ?", ['%' . strtolower($query) . '%']);
+                });
+            }
+
+            // Filtrar por provincia
+            if (!empty($province)) {
+                $leaguesQuery->where('province', $province);
+            }
+
+            $existingLeagues = $leaguesQuery
+                ->orderBy('name')
+                ->limit($limit)
+                ->get()
+                ->map(function($league) {
+                    return [
+                        'name' => $league->name,
+                        'province' => $league->province,
+                        'region' => $league->region,
+                        'display_name' => $league->name . ' (' . $league->province . ')',
+                        'source' => 'database',
+                        'is_existing' => true
+                    ];
+                })
+                ->toArray();
+
+            // Obtener ligas predefinidas
+            $predefinedLeagues = $this->getPredefinedOptions('league');
+            $predefinedLeaguesFormatted = array_map(function($league) {
+                return [
+                    'name' => $league,
+                    'province' => null,
+                    'region' => null,
+                    'display_name' => $league,
+                    'source' => 'predefined',
+                    'is_existing' => false
+                ];
+            }, $predefinedLeagues);
+
+            // Filtrar ligas predefinidas si hay búsqueda
+            if (!empty($query)) {
+                $predefinedLeaguesFormatted = array_filter($predefinedLeaguesFormatted, function($league) use ($query) {
+                    return stripos($league['name'], $query) !== false;
+                });
+            }
+
+            // Combinar y eliminar duplicados
+            $allLeagues = array_merge($existingLeagues, $predefinedLeaguesFormatted);
+            $uniqueLeagues = [];
+            $seenNames = [];
+
+            foreach ($allLeagues as $league) {
+                $normalizedName = strtolower(trim($league['name']));
+                if (!in_array($normalizedName, $seenNames)) {
+                    $uniqueLeagues[] = $league;
+                    $seenNames[] = $normalizedName;
+                }
+            }
+
+            // Ordenar: primero ligas de la base de datos, luego predefinidas
+            usort($uniqueLeagues, function($a, $b) {
+                if ($a['source'] !== $b['source']) {
+                    return $a['source'] === 'database' ? -1 : 1;
+                }
+                return strcmp($a['name'], $b['name']);
+            });
+
+            return response()->json([
+                'success' => true,
+                'leagues' => array_values($uniqueLeagues),
+                'total_count' => count($uniqueLeagues),
+                'database_count' => count($existingLeagues),
+                'predefined_count' => count($predefinedLeaguesFormatted),
+                'filters_applied' => [
+                    'search' => $query,
+                    'province' => $province
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting existing leagues: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener ligas existentes'
+            ], 500);
+        }
+    }
 }

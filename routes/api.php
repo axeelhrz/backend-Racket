@@ -125,6 +125,10 @@ Route::prefix('registro-rapido')->group(function () {
     Route::post('/validate-custom-field', [QuickRegistrationController::class, 'validateCustomField']);
     Route::get('/field-suggestions/{field_type}', [QuickRegistrationController::class, 'getFieldSuggestions']);
     
+    // NUEVAS RUTAS: Clubes y ligas existentes
+    Route::get('/existing-clubs', [QuickRegistrationController::class, 'getExistingClubs']);
+    Route::get('/existing-leagues', [QuickRegistrationController::class, 'getExistingLeagues']);
+    
     // NUEVA RUTA: Sala de espera
     Route::post('/waiting-room-status', [QuickRegistrationController::class, 'getWaitingRoomStatus']);
 });
@@ -139,6 +143,10 @@ Route::post('/add-custom-field', [QuickRegistrationController::class, 'addCustom
 Route::get('/field-options/{fieldType}', [QuickRegistrationController::class, 'getFieldOptions']);
 Route::post('/validate-custom-field', [QuickRegistrationController::class, 'validateCustomField']);
 Route::get('/field-suggestions/{field_type}', [QuickRegistrationController::class, 'getFieldSuggestions']);
+
+// NUEVAS RUTAS LEGACY: Clubes y ligas existentes
+Route::get('/existing-clubs', [QuickRegistrationController::class, 'getExistingClubs']);
+Route::get('/existing-leagues', [QuickRegistrationController::class, 'getExistingLeagues']);
 
 // NUEVA RUTA LEGACY: Sala de espera
 Route::post('/registro-rapido/waiting-room-status', [QuickRegistrationController::class, 'getWaitingRoomStatus']);
