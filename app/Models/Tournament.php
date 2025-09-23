@@ -229,4 +229,54 @@ class Tournament extends Model
             default => ucfirst($this->status)
         };
     }
+
+    /**
+     * Get confirmed participants count
+     */
+    public function getConfirmedParticipantsCountAttribute()
+    {
+        return $this->participants()->where('status', 'confirmed')->count();
+    }
+
+    /**
+     * Get pending participants count
+     */
+    public function getPendingParticipantsCountAttribute()
+    {
+        return $this->participants()->where('status', 'pending')->count();
+    }
+
+    /**
+     * Get waiting list participants count
+     */
+    public function getWaitingListCountAttribute()
+    {
+        return $this->participants()->where('status', 'waiting_list')->count();
+    }
+
+    /**
+     * Check if tournament is full
+     */
+    public function isFull()
+    {
+        return $this->confirmed_participants_count >= $this->max_participants;
+    }
+
+    /**
+     * Check if user can register
+     */
+    public function canRegister()
+    {
+        return !$this->isFull() && 
+               $this->status === 'upcoming' && 
+               now() <= $this->registration_deadline;
+    }
+
+    /**
+     * Get available spots
+     */
+    public function getAvailableSpotsAttribute()
+    {
+        return max(0, $this->max_participants - $this->confirmed_participants_count);
+    }
 }

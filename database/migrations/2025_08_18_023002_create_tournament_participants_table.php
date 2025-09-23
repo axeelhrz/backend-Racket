@@ -13,7 +13,20 @@ return new class extends Migration
     {
         Schema::create('tournament_participants', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('tournament_id')->constrained()->onDelete('cascade');
+            $table->foreignId('member_id')->constrained()->onDelete('cascade');
+            $table->timestamp('registration_date')->useCurrent();
+            $table->enum('status', ['registered', 'confirmed', 'withdrawn', 'disqualified'])->default('registered');
+            $table->integer('seed')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
+            
+            // Ensure a member can only participate once per tournament
+            $table->unique(['tournament_id', 'member_id']);
+            
+            // Indexes for better performance
+            $table->index(['tournament_id', 'status']);
+            $table->index(['member_id', 'status']);
         });
     }
 

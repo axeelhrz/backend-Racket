@@ -12,6 +12,7 @@ use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\QuickRegistrationController;
 use App\Http\Controllers\EquipmentController;
+use App\Http\Controllers\TournamentParticipantController;
 use Illuminate\Support\Facades\DB;
 
 Route::get('/user', function (Request $request) {
@@ -98,6 +99,15 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Tournaments
     Route::apiResource('tournaments', TournamentController::class);
+    
+    // Tournament Participants
+    Route::prefix('tournaments/{tournament}')->group(function () {
+        Route::get('/participants', [TournamentParticipantController::class, 'index']);
+        Route::post('/participants', [TournamentParticipantController::class, 'store']);
+        Route::get('/available-members', [TournamentParticipantController::class, 'availableMembers']);
+        Route::put('/participants/{participant}', [TournamentParticipantController::class, 'update']);
+        Route::delete('/participants/{participant}', [TournamentParticipantController::class, 'destroy']);
+    });
     
     // Invitations
     Route::apiResource('invitations', InvitationController::class);
