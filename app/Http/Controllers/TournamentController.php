@@ -10,59 +10,81 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class TournamentController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
+            Log::info('TournamentController@index - Starting tournament fetch');
+            
             $user = Auth::user();
             
             if (!$user) {
+                Log::warning('TournamentController@index - No authenticated user');
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $query = Tournament::with(['club', 'league', 'sport', 'participants']);
+            Log::info('TournamentController@index - User authenticated', ['user_id' => $user->id, 'role' => $user->role]);
 
-            // Filter based on user role
-            if ($user->role === 'club_admin') {
-                $query->whereHas('club', function ($q) use ($user) {
-                    $q->where('admin_id', $user->id);
-                });
-            } elseif ($user->role === 'league_admin') {
-                $query->whereHas('league', function ($q) use ($user) {
-                    $q->where('admin_id', $user->id);
-                });
-            } elseif ($user->role === 'club') {
-                // For club role, find tournaments for clubs owned by this user
-                $query->whereHas('club', function ($q) use ($user) {
-                    $q->where('user_id', $user->id);
-                });
-            }
+            // Simplified query without complex validation
+            try {
+                $query = Tournament::query();
 
-            $tournaments = $query->get();
-
-            // Update current_participants count for each tournament
-            foreach ($tournaments as $tournament) {
-                $activeParticipants = $tournament->participants()
-                    ->whereIn('status', ['registered', 'confirmed'])
-                    ->count();
-                
-                // Update the current_participants field if it's different
-                if ($tournament->current_participants !== $activeParticipants) {
-                    $tournament->update(['current_participants' => $activeParticipants]);
-                    $tournament->current_participants = $activeParticipants;
+                // Try to load relationships safely
+                try {
+                    $query->with(['club', 'league', 'sport']);
+                } catch (\Exception $e) {
+                    Log::warning('TournamentController@index - Could not load relationships: ' . $e->getMessage());
+                    // Continue without relationships
                 }
+
+                // Handle club_id query parameter
+                $clubId = $request->query('club_id');
+                if ($clubId) {
+                    Log::info('TournamentController@index - Filtering by club_id: ' . $clubId);
+                    $query->where('club_id', $clubId);
+                }
+
+                // Simple role-based filtering (only if no specific club_id is requested)
+                if (!$clubId) {
+                    if ($user->role === 'club') {
+                        // Find user's club and filter by it
+                        $userClub = Club::where('user_id', $user->id)->first();
+                        if ($userClub) {
+                            $query->where('club_id', $userClub->id);
+                        }
+                    }
+                    // For super_admin and other roles, show all tournaments
+                }
+
+                Log::info('TournamentController@index - Executing query');
+
+                $tournaments = $query->get();
+
+                Log::info('TournamentController@index - Tournaments fetched', ['count' => $tournaments->count()]);
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $tournaments
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('TournamentController@index - Query execution failed: ' . $e->getMessage());
+                Log::error('TournamentController@index - Stack trace: ' . $e->getTraceAsString());
+                return response()->json([
+                    'message' => 'Failed to fetch tournaments: ' . $e->getMessage()
+                ], 500);
             }
 
-            return response()->json([
-                'success' => true,
-                'data' => $tournaments
-            ]);
         } catch (\Exception $e) {
-            Log::error('Error fetching tournaments: ' . $e->getMessage());
-            return response()->json(['message' => 'Error fetching tournaments'], 500);
+            Log::error('TournamentController@index - General error: ' . $e->getMessage());
+            Log::error('TournamentController@index - Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'message' => 'Error fetching tournaments: ' . $e->getMessage()
+            ], 500);
         }
     }
 

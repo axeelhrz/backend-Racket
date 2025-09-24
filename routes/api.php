@@ -15,6 +15,8 @@ use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\TournamentParticipantController;
 use App\Http\Controllers\MatchController;
 use Illuminate\Support\Facades\DB;
+use App\Models\Tournament;
+use App\Models\Club;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -44,6 +46,44 @@ Route::get('/test-db', function () {
         ], 500);
     }
 });
+
+Route::get('/debug-tournaments', function (Request $request) {
+    try {
+        $clubId = $request->query('club_id');
+        
+        // Test basic query
+        $tournamentsCount = Tournament::count();
+        
+        // Test with club_id filter
+        $filteredCount = $clubId ? Tournament::where('club_id', $clubId)->count() : 0;
+        
+        // Test club existence
+        $clubExists = $clubId ? Club::find($clubId) : null;
+        
+        // Test table structure
+        $columns = DB::select("SHOW COLUMNS FROM tournaments");
+        $columnNames = array_column($columns, 'Field');
+        
+        return response()->json([
+            'success' => true,
+            'debug_info' => [
+                'total_tournaments' => $tournamentsCount,
+                'filtered_tournaments' => $filteredCount,
+                'club_id_requested' => $clubId,
+                'club_exists' => $clubExists ? true : false,
+                'club_data' => $clubExists,
+                'table_columns' => $columnNames,
+                'has_club_id_column' => in_array('club_id', $columnNames),
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
