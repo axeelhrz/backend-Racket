@@ -15,6 +15,7 @@ use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\TournamentParticipantController;
 use App\Http\Controllers\MatchController;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Tournament;
 use App\Models\Club;
 
@@ -43,6 +44,69 @@ Route::get('/test-db', function () {
             'message' => 'Database connection failed!',
             'error' => $e->getMessage(),
             'timestamp' => now()
+        ], 500);
+    }
+});
+
+Route::get('/debug-tournament-tables', function (Request $request) {
+    try {
+        // Get all tables
+        $tables = DB::select('SHOW TABLES');
+        $tableNames = array_map(function($table) {
+            return array_values((array)$table)[0];
+        }, $tables);
+        
+        $debug_info = [
+            'all_tables' => $tableNames,
+            'tournament_participants_exists' => in_array('tournament_participants', $tableNames),
+            'matches_exists' => in_array('matches', $tableNames),
+            'tournaments_exists' => in_array('tournaments', $tableNames),
+            'members_exists' => in_array('members', $tableNames),
+        ];
+        
+        // Check tournament_participants table structure if it exists
+        if (in_array('tournament_participants', $tableNames)) {
+            try {
+                $columns = DB::select('SHOW COLUMNS FROM tournament_participants');
+                $debug_info['tournament_participants_columns'] = array_map(function($col) {
+                    return $col->Field;
+                }, $columns);
+            } catch (\Exception $e) {
+                $debug_info['tournament_participants_error'] = $e->getMessage();
+            }
+        }
+        
+        // Check matches table structure if it exists
+        if (in_array('matches', $tableNames)) {
+            try {
+                $columns = DB::select('SHOW COLUMNS FROM matches');
+                $debug_info['matches_columns'] = array_map(function($col) {
+                    return $col->Field;
+                }, $columns);
+            } catch (\Exception $e) {
+                $debug_info['matches_error'] = $e->getMessage();
+            }
+        }
+        
+        // Test a simple query if tournament_participants exists
+        if (in_array('tournament_participants', $tableNames)) {
+            try {
+                $count = DB::table('tournament_participants')->count();
+                $debug_info['tournament_participants_count'] = $count;
+            } catch (\Exception $e) {
+                $debug_info['tournament_participants_query_error'] = $e->getMessage();
+            }
+        }
+        
+        return response()->json([
+            'success' => true,
+            'debug_info' => $debug_info
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
         ], 500);
     }
 });
