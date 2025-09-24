@@ -23,8 +23,13 @@ return [
         'tournaments/*/participants',
         'tournaments/*/available-members',
         'tournaments/*/matches',
+        'tournaments/*/matches/*',
+        'tournaments/*/matches/*/result',
         'tournaments/*/bracket',
-        'tournaments/*/generate-bracket'
+        'tournaments/*/generate-bracket',
+        'matches/*',
+        'matches/*/result',
+        'matches/*/score'
     ],
 
     'allowed_methods' => ['*'],

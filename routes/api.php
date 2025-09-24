@@ -94,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/participants', [TournamentParticipantController::class, 'index']);
         Route::post('/participants', [TournamentParticipantController::class, 'store']);
         Route::get('/available-members', [TournamentParticipantController::class, 'availableMembers']);
+        Route::get('/stats', [TournamentParticipantController::class, 'tournamentStats']);
         Route::put('/participants/{participant}', [TournamentParticipantController::class, 'update']);
         Route::delete('/participants/{participant}', [TournamentParticipantController::class, 'destroy']);
         

@@ -117,10 +117,9 @@ class Member extends Model
     /**
      * Get the league through the club.
      */
-    public function league(): BelongsTo
+    public function league()
     {
-        return $this->belongsTo(League::class, 'league_id', 'id')
-                    ->through('club');
+        return $this->hasOneThrough(League::class, Club::class, 'id', 'id', 'club_id', 'league_id');
     }
 
     /**

@@ -23,7 +23,7 @@ class TournamentController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $query = Tournament::with(['club', 'league', 'sport']);
+            $query = Tournament::with(['club', 'league', 'sport', 'participants']);
 
             // Filter based on user role
             if ($user->role === 'club_admin') {
@@ -42,6 +42,19 @@ class TournamentController extends Controller
             }
 
             $tournaments = $query->get();
+
+            // Update current_participants count for each tournament
+            foreach ($tournaments as $tournament) {
+                $activeParticipants = $tournament->participants()
+                    ->whereIn('status', ['registered', 'confirmed'])
+                    ->count();
+                
+                // Update the current_participants field if it's different
+                if ($tournament->current_participants !== $activeParticipants) {
+                    $tournament->update(['current_participants' => $activeParticipants]);
+                    $tournament->current_participants = $activeParticipants;
+                }
+            }
 
             return response()->json([
                 'success' => true,

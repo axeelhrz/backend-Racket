@@ -24,6 +24,8 @@ class TournamentMatch extends Model
         'started_at',
         'completed_at',
         'score',
+        'participant1_score',
+        'participant2_score',
         'notes',
         'court_number',
         'referee',
@@ -45,6 +47,8 @@ class TournamentMatch extends Model
         'match_number' => 'integer',
         'court_number' => 'integer',
         'bracket_position' => 'integer',
+        'participant1_score' => 'integer',
+        'participant2_score' => 'integer',
         'is_bye' => 'boolean'
     ];
 
