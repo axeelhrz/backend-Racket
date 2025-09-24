@@ -27,17 +27,32 @@ class MatchController extends Controller
                 return response()->json(['success' => false, 'message' => 'No autenticado'], 401);
             }
 
+            Log::info('Fetching matches for tournament: ' . $tournament->id);
+
+            // Get matches with participants
+            $matches = TournamentMatch::where('tournament_id', $tournament->id)
+                ->with([
+                    'participant1.member',
+                    'participant2.member',
+                    'winner.member'
+                ])
+                ->orderBy('round')
+                ->orderBy('match_number')
+                ->get();
+
+            Log::info('Found matches: ' . $matches->count());
+
             return response()->json([
                 'success' => true,
-                'data' => [],
-                'message' => 'Matches endpoint working'
+                'data' => $matches,
+                'count' => $matches->count()
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error fetching tournament matches: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Error fetching matches'
+                'message' => 'Error fetching matches: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -66,164 +81,43 @@ class MatchController extends Controller
                 return response()->json(['success' => false, 'message' => 'No autorizado'], 403);
             }
 
-            Log::info('User authorized');
+            // Get participants
+            $participants = TournamentParticipant::where('tournament_id', $tournament->id)
+                ->whereIn('status', ['registered', 'confirmed'])
+                ->with('member')
+                ->get();
 
-            // Check database connection
-            try {
-                $dbTest = DB::select('SELECT 1 as test');
-                Log::info('Database connection OK');
-            } catch (\Exception $e) {
-                Log::error('Database connection failed: ' . $e->getMessage());
+            Log::info('Active participants: ' . $participants->count());
+
+            if ($participants->count() < 2) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error de conexión a la base de datos'
-                ], 500);
-            }
-
-            // Check what tables exist
-            try {
-                $tables = DB::select('SHOW TABLES');
-                $tableNames = array_map(function($table) {
-                    return array_values((array)$table)[0];
-                }, $tables);
-                
-                Log::info('Available tables: ' . implode(', ', $tableNames));
-                
-                $hasMatches = in_array('tournament_matches', $tableNames) || in_array('matches', $tableNames);
-                $hasParticipants = in_array('tournament_participants', $tableNames);
-                
-                Log::info('Has matches table: ' . ($hasMatches ? 'YES' : 'NO'));
-                Log::info('Has participants table: ' . ($hasParticipants ? 'YES' : 'NO'));
-                
-                if (!$hasMatches) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Tabla de partidos no encontrada. Tablas disponibles: ' . implode(', ', $tableNames)
-                    ], 500);
-                }
-                
-                if (!$hasParticipants) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Tabla de participantes no encontrada. Tablas disponibles: ' . implode(', ', $tableNames)
-                    ], 500);
-                }
-                
-            } catch (\Exception $e) {
-                Log::error('Error checking tables: ' . $e->getMessage());
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error verificando tablas: ' . $e->getMessage()
-                ], 500);
-            }
-
-            // Try to get participants count
-            try {
-                $participantCount = DB::table('tournament_participants')
-                    ->where('tournament_id', $tournament->id)
-                    ->count();
-                    
-                Log::info('Participant count: ' . $participantCount);
-                
-                if ($participantCount < 2) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Se necesitan al menos 2 participantes para generar el bracket. Encontrados: ' . $participantCount
-                    ], 400);
-                }
-                
-            } catch (\Exception $e) {
-                Log::error('Error counting participants: ' . $e->getMessage());
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error contando participantes: ' . $e->getMessage()
-                ], 500);
+                    'message' => 'Se necesitan al menos 2 participantes para generar el bracket. Encontrados: ' . $participants->count()
+                ], 400);
             }
 
             // Check if matches already exist
-            try {
-                $existingMatches = DB::table('tournament_matches')
-                    ->where('tournament_id', $tournament->id)
-                    ->count();
-                    
-                Log::info('Existing matches: ' . $existingMatches);
-                
-                if ($existingMatches > 0) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'El bracket ya ha sido generado para este torneo (' . $existingMatches . ' partidos existentes)'
-                    ], 400);
-                }
-                
-            } catch (\Exception $e) {
-                Log::error('Error checking existing matches: ' . $e->getMessage());
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error verificando partidos existentes: ' . $e->getMessage()
-                ], 500);
+            $existingMatches = TournamentMatch::where('tournament_id', $tournament->id)->count();
+            
+            if ($existingMatches > 0) {
+                Log::info('Deleting existing matches: ' . $existingMatches);
+                TournamentMatch::where('tournament_id', $tournament->id)->delete();
             }
 
-            // Get table structure for tournament_matches
-            try {
-                $columns = DB::select('SHOW COLUMNS FROM tournament_matches');
-                $columnNames = array_map(function($col) {
-                    return $col->Field;
-                }, $columns);
-                
-                Log::info('tournament_matches columns: ' . implode(', ', $columnNames));
-                
-                $requiredColumns = ['tournament_id', 'round', 'match_number'];
-                $missingColumns = array_diff($requiredColumns, $columnNames);
-                
-                if (!empty($missingColumns)) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Columnas faltantes en tournament_matches: ' . implode(', ', $missingColumns)
-                    ], 500);
-                }
-                
-            } catch (\Exception $e) {
-                Log::error('Error checking table structure: ' . $e->getMessage());
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error verificando estructura de tabla: ' . $e->getMessage()
-                ], 500);
-            }
+            // Generate single elimination bracket
+            $this->generateSingleEliminationBracket($tournament, $participants);
 
-            // Try to create a simple test match
-            try {
-                $testMatchId = DB::table('tournament_matches')->insertGetId([
+            Log::info('=== BRACKET GENERATION COMPLETE ===');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Bracket generado exitosamente',
+                'data' => [
                     'tournament_id' => $tournament->id,
-                    'round' => 1,
-                    'match_number' => 1,
-                    'status' => 'test',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                
-                Log::info('Test match created with ID: ' . $testMatchId);
-                
-                // Delete the test match
-                DB::table('tournament_matches')->where('id', $testMatchId)->delete();
-                Log::info('Test match deleted');
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Bracket generation test successful. Ready to generate real bracket.',
-                    'debug_info' => [
-                        'tournament_id' => $tournament->id,
-                        'participant_count' => $participantCount,
-                        'test_match_id' => $testMatchId
-                    ]
-                ]);
-                
-            } catch (\Exception $e) {
-                Log::error('Error creating test match: ' . $e->getMessage());
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error creando partido de prueba: ' . $e->getMessage()
-                ], 500);
-            }
+                    'participant_count' => $participants->count(),
+                    'matches_created' => TournamentMatch::where('tournament_id', $tournament->id)->count()
+                ]
+            ]);
 
         } catch (\Exception $e) {
             Log::error('=== BRACKET GENERATION ERROR ===');
@@ -237,14 +131,169 @@ class MatchController extends Controller
     }
 
     /**
+     * Generate single elimination bracket
+     */
+    private function generateSingleEliminationBracket(Tournament $tournament, $participants)
+    {
+        $participantCount = $participants->count();
+        
+        // Calculate number of rounds needed
+        $totalRounds = ceil(log($participantCount, 2));
+        
+        // Calculate total matches needed
+        $totalMatches = $participantCount - 1;
+        
+        Log::info("Generating bracket: {$participantCount} participants, {$totalRounds} rounds, {$totalMatches} matches");
+
+        // Shuffle participants for random seeding
+        $shuffledParticipants = $participants->shuffle();
+        
+        // Create first round matches
+        $currentRoundParticipants = $shuffledParticipants->toArray();
+        $matchNumber = 1;
+        $allMatches = [];
+
+        for ($round = 1; $round <= $totalRounds; $round++) {
+            $roundMatches = [];
+            $nextRoundParticipants = [];
+
+            if ($round == 1) {
+                // First round: pair up all participants
+                for ($i = 0; $i < count($currentRoundParticipants); $i += 2) {
+                    $participant1 = $currentRoundParticipants[$i];
+                    $participant2 = isset($currentRoundParticipants[$i + 1]) ? $currentRoundParticipants[$i + 1] : null;
+
+                    $match = TournamentMatch::create([
+                        'tournament_id' => $tournament->id,
+                        'round' => $round,
+                        'match_number' => $matchNumber++,
+                        'participant1_id' => $participant1['id'],
+                        'participant2_id' => $participant2 ? $participant2['id'] : null,
+                        'status' => $participant2 ? 'scheduled' : 'bye',
+                        'is_bye' => !$participant2,
+                        'bracket_position' => count($roundMatches) + 1
+                    ]);
+
+                    if (!$participant2) {
+                        // Bye match - participant1 automatically advances
+                        $match->update([
+                            'winner_id' => $participant1['id'],
+                            'status' => 'completed',
+                            'completed_at' => now()
+                        ]);
+                        $nextRoundParticipants[] = $participant1;
+                    }
+
+                    $roundMatches[] = $match;
+                }
+            } else {
+                // Subsequent rounds: create matches for winners of previous round
+                $previousRoundMatches = array_filter($allMatches, function($match) use ($round) {
+                    return $match->round == ($round - 1);
+                });
+
+                for ($i = 0; $i < count($previousRoundMatches); $i += 2) {
+                    $match1 = $previousRoundMatches[$i];
+                    $match2 = isset($previousRoundMatches[$i + 1]) ? $previousRoundMatches[$i + 1] : null;
+
+                    $match = TournamentMatch::create([
+                        'tournament_id' => $tournament->id,
+                        'round' => $round,
+                        'match_number' => $matchNumber++,
+                        'participant1_id' => null, // Will be filled when previous matches complete
+                        'participant2_id' => null, // Will be filled when previous matches complete
+                        'status' => 'scheduled',
+                        'bracket_position' => count($roundMatches) + 1
+                    ]);
+
+                    // Link previous matches to this match
+                    $match1->update(['next_match_id' => $match->id]);
+                    if ($match2) {
+                        $match2->update(['next_match_id' => $match->id]);
+                    }
+
+                    $roundMatches[] = $match;
+                }
+            }
+
+            $allMatches = array_merge($allMatches, $roundMatches);
+            $currentRoundParticipants = $nextRoundParticipants;
+        }
+
+        Log::info("Created {$matchNumber} matches across {$totalRounds} rounds");
+    }
+
+    /**
      * Update match result
      */
     public function updateResult(Request $request, Tournament $tournament, TournamentMatch $match): JsonResponse
     {
-        return response()->json([
-            'success' => false,
-            'message' => 'Update result not implemented yet'
-        ], 501);
+        try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'No autenticado'], 401);
+            }
+
+            $validatedData = $request->validate([
+                'winner_id' => 'required|exists:tournament_participants,id',
+                'score' => 'nullable|string',
+                'score_p1' => 'nullable|integer|min:0',
+                'score_p2' => 'nullable|integer|min:0',
+                'notes' => 'nullable|string'
+            ]);
+
+            // Verify the winner is one of the participants
+            if (!in_array($validatedData['winner_id'], [$match->participant1_id, $match->participant2_id])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El ganador debe ser uno de los participantes del partido'
+                ], 400);
+            }
+
+            // Update match result
+            $match->update([
+                'winner_id' => $validatedData['winner_id'],
+                'status' => 'completed',
+                'completed_at' => now(),
+                'score' => $validatedData['score'] ?? null,
+                'participant1_score' => $validatedData['score_p1'] ?? null,
+                'participant2_score' => $validatedData['score_p2'] ?? null,
+                'notes' => $validatedData['notes'] ?? null
+            ]);
+
+            // Advance winner to next match if exists
+            if ($match->next_match_id) {
+                $nextMatch = TournamentMatch::find($match->next_match_id);
+                if ($nextMatch) {
+                    if (!$nextMatch->participant1_id) {
+                        $nextMatch->update(['participant1_id' => $validatedData['winner_id']]);
+                    } elseif (!$nextMatch->participant2_id) {
+                        $nextMatch->update(['participant2_id' => $validatedData['winner_id']]);
+                    }
+                }
+            }
+
+            Log::info("Match {$match->id} result updated. Winner: {$validatedData['winner_id']}");
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Resultado actualizado exitosamente',
+                'data' => $match->fresh(['participant1.member', 'participant2.member', 'winner.member'])
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos de validación incorrectos',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating match result: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar resultado: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -253,23 +302,36 @@ class MatchController extends Controller
     public function getBracket(Tournament $tournament): JsonResponse
     {
         try {
+            $matches = TournamentMatch::where('tournament_id', $tournament->id)
+                ->with([
+                    'participant1.member',
+                    'participant2.member', 
+                    'winner.member'
+                ])
+                ->orderBy('round')
+                ->orderBy('bracket_position')
+                ->get();
+
+            $totalRounds = $matches->max('round') ?? 0;
+            $completedMatches = $matches->where('status', 'completed')->count();
+            $totalMatches = $matches->count();
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'tournament' => $tournament,
-                    'bracket' => [],
-                    'total_rounds' => 0,
-                    'completed_matches' => 0,
-                    'total_matches' => 0
-                ],
-                'message' => 'Bracket endpoint working'
+                    'matches' => $matches,
+                    'total_rounds' => $totalRounds,
+                    'completed_matches' => $completedMatches,
+                    'total_matches' => $totalMatches
+                ]
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error fetching tournament bracket: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Error al obtener el bracket'
+                'message' => 'Error al obtener el bracket: ' . $e->getMessage()
             ], 500);
         }
     }
