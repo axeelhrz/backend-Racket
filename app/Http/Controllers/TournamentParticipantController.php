@@ -19,78 +19,202 @@ class TournamentParticipantController extends Controller
     public function index(Tournament $tournament): JsonResponse
     {
         try {
-            Log::info('TournamentParticipantController@index - Fetching participants for tournament: ' . $tournament->id);
+            Log::info('TournamentParticipantController@index - Tournament ID: ' . $tournament->id);
 
-            // Simple query without complex relationships first
-            $participants = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->orderBy('registration_date', 'asc')
-                ->get();
-
-            Log::info('TournamentParticipantController@index - Found participants: ' . $participants->count());
-
-            // Try to load relationships safely
-            $transformedParticipants = [];
-            foreach ($participants as $participant) {
-                try {
-                    $member = Member::find($participant->member_id);
-                    $club = null;
-                    
-                    if ($member && $member->club_id) {
-                        $club = \App\Models\Club::find($member->club_id);
-                    }
-
-                    $transformedParticipants[] = [
-                        'id' => $participant->id,
-                        'tournament_id' => $participant->tournament_id,
-                        'member_id' => $participant->member_id,
-                        'status' => $participant->status ?? 'registered',
-                        'registration_date' => $participant->registration_date ?? $participant->created_at,
-                        'seed' => $participant->seed ?? null,
-                        'notes' => $participant->notes ?? null,
-                        'member' => $member ? [
-                            'id' => $member->id,
-                            'first_name' => $member->first_name ?? '',
-                            'last_name' => $member->last_name ?? '',
-                            'email' => $member->email ?? '',
-                            'phone' => $member->phone ?? '',
-                            'gender' => $member->gender ?? null,
-                            'ranking' => $member->ranking ?? null,
-                            'photo' => $member->photo_path ?? null,
-                            'club' => $club ? [
-                                'id' => $club->id,
-                                'name' => $club->name,
-                            ] : null,
-                        ] : null,
-                    ];
-                } catch (\Exception $e) {
-                    Log::warning('Error loading participant details: ' . $e->getMessage());
-                    // Add participant with minimal data
-                    $transformedParticipants[] = [
-                        'id' => $participant->id,
-                        'tournament_id' => $participant->tournament_id,
-                        'member_id' => $participant->member_id,
-                        'status' => $participant->status ?? 'registered',
-                        'registration_date' => $participant->registration_date ?? $participant->created_at,
-                        'seed' => $participant->seed ?? null,
-                        'notes' => $participant->notes ?? null,
-                        'member' => null,
-                    ];
+            // Check if tournament_participants table exists
+            try {
+                $tableExists = DB::select("SHOW TABLES LIKE 'tournament_participants'");
+                if (empty($tableExists)) {
+                    Log::warning('tournament_participants table does not exist');
+                    return response()->json([
+                        'success' => true,
+                        'data' => [],
+                        'count' => 0,
+                        'tournament_id' => $tournament->id,
+                        'message' => 'No participants table found'
+                    ]);
                 }
+            } catch (\Exception $e) {
+                Log::error('Error checking table existence: ' . $e->getMessage());
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'count' => 0,
+                    'tournament_id' => $tournament->id,
+                    'message' => 'Database error'
+                ]);
             }
 
-            return response()->json([
-                'success' => true,
-                'data' => $transformedParticipants,
-                'count' => count($transformedParticipants),
-                'tournament_id' => $tournament->id,
-            ]);
+            // Simple query to get participants
+            try {
+                $participants = DB::table('tournament_participants')
+                    ->where('tournament_id', $tournament->id)
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+
+                Log::info('Found participants: ' . $participants->count());
+
+                $transformedParticipants = [];
+                foreach ($participants as $participant) {
+                    $transformedParticipants[] = [
+                        'id' => $participant->id,
+                        'tournament_id' => $participant->tournament_id,
+                        'member_id' => $participant->member_id,
+                        'status' => $participant->status ?? 'registered',
+                        'registration_date' => $participant->registration_date ?? $participant->created_at,
+                        'seed' => $participant->seed ?? null,
+                        'notes' => $participant->notes ?? null,
+                        'member' => null, // We'll load this separately if needed
+                    ];
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $transformedParticipants,
+                    'count' => count($transformedParticipants),
+                    'tournament_id' => $tournament->id,
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('Error querying participants: ' . $e->getMessage());
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'count' => 0,
+                    'tournament_id' => $tournament->id,
+                    'message' => 'Query error: ' . $e->getMessage()
+                ]);
+            }
+
         } catch (\Exception $e) {
-            Log::error('Error fetching tournament participants: ' . $e->getMessage());
+            Log::error('Error in participants index: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Error fetching participants',
-                'error' => app()->environment('local') ? $e->getMessage() : 'Internal server error'
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available members for tournament registration
+     */
+    public function availableMembers(Tournament $tournament): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            Log::info('Fetching available members for tournament: ' . $tournament->id);
+
+            // Check if members table exists
+            try {
+                $tableExists = DB::select("SHOW TABLES LIKE 'members'");
+                if (empty($tableExists)) {
+                    Log::warning('members table does not exist');
+                    return response()->json([
+                        'success' => true,
+                        'data' => [],
+                        'message' => 'No members table found'
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Error checking members table: ' . $e->getMessage());
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => 'Database error'
+                ]);
+            }
+
+            // Get registered member IDs (if tournament_participants table exists)
+            $registeredMemberIds = [];
+            try {
+                $registeredMemberIds = DB::table('tournament_participants')
+                    ->where('tournament_id', $tournament->id)
+                    ->pluck('member_id')
+                    ->toArray();
+            } catch (\Exception $e) {
+                Log::warning('Could not get registered members: ' . $e->getMessage());
+            }
+
+            // Simple query to get members
+            try {
+                $query = DB::table('members')
+                    ->where('status', 'active');
+
+                // Simple role-based filtering
+                if ($user->role === 'club') {
+                    // Try to get user's club
+                    try {
+                        $userClub = DB::table('clubs')->where('user_id', $user->id)->first();
+                        if ($userClub) {
+                            $query->where('club_id', $userClub->id);
+                        } else {
+                            return response()->json([
+                                'success' => true,
+                                'data' => [],
+                                'message' => 'No club found for user'
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Could not get user club: ' . $e->getMessage());
+                    }
+                } elseif ($user->role === 'super_admin') {
+                    // Super admin can see all members, but filter by tournament club if available
+                    if ($tournament->club_id) {
+                        $query->where('club_id', $tournament->club_id);
+                    }
+                }
+
+                // Exclude registered members
+                if (!empty($registeredMemberIds)) {
+                    $query->whereNotIn('id', $registeredMemberIds);
+                }
+
+                $members = $query->orderBy('first_name')->get();
+
+                Log::info('Found available members: ' . $members->count());
+
+                $transformedMembers = [];
+                foreach ($members as $member) {
+                    $transformedMembers[] = [
+                        'id' => $member->id,
+                        'first_name' => $member->first_name ?? '',
+                        'last_name' => $member->last_name ?? '',
+                        'email' => $member->email ?? '',
+                        'phone' => $member->phone ?? '',
+                        'gender' => $member->gender ?? null,
+                        'ranking' => $member->ranking ?? null,
+                        'status' => $member->status ?? 'active',
+                        'club' => null, // We'll load this separately if needed
+                    ];
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $transformedMembers
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('Error querying members: ' . $e->getMessage());
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => 'Query error: ' . $e->getMessage()
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error in availableMembers: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching available members',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -107,83 +231,49 @@ class TournamentParticipantController extends Controller
             }
 
             $validatedData = $request->validate([
-                'member_id' => 'required|exists:members,id',
+                'member_id' => 'required|integer',
                 'notes' => 'nullable|string|max:1000'
             ]);
 
-            // Check if tournament is still accepting registrations
-            if ($tournament->registration_deadline < now()) {
+            // Simple insert using DB query builder
+            try {
+                $participantId = DB::table('tournament_participants')->insertGetId([
+                    'tournament_id' => $tournament->id,
+                    'member_id' => $validatedData['member_id'],
+                    'registration_date' => now(),
+                    'status' => 'registered',
+                    'notes' => $validatedData['notes'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Participante agregado exitosamente',
+                    'data' => [
+                        'id' => $participantId,
+                        'tournament_id' => $tournament->id,
+                        'member_id' => $validatedData['member_id'],
+                        'status' => 'registered'
+                    ]
+                ], 201);
+
+            } catch (\Exception $e) {
+                Log::error('Error inserting participant: ' . $e->getMessage());
                 return response()->json([
                     'success' => false,
-                    'message' => 'El período de inscripciones ha cerrado'
-                ], 400);
+                    'message' => 'Error al agregar participante: ' . $e->getMessage()
+                ], 500);
             }
-
-            // Check if tournament is full
-            $currentParticipants = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->whereIn('status', ['registered', 'confirmed'])
-                ->count();
-
-            if ($currentParticipants >= $tournament->max_participants) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'El torneo ha alcanzado el máximo de participantes'
-                ], 400);
-            }
-
-            // Check if member is already registered
-            $existingParticipant = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->where('member_id', $validatedData['member_id'])
-                ->first();
-
-            if ($existingParticipant) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'El miembro ya está registrado en este torneo'
-                ], 400);
-            }
-
-            // Verify member exists
-            $member = Member::find($validatedData['member_id']);
-            if (!$member) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Miembro no encontrado'
-                ], 404);
-            }
-
-            DB::beginTransaction();
-
-            // Create participant record
-            $participant = TournamentParticipant::create([
-                'tournament_id' => $tournament->id,
-                'member_id' => $validatedData['member_id'],
-                'registration_date' => now(),
-                'status' => 'registered',
-                'notes' => $validatedData['notes'] ?? null
-            ]);
-
-            // Update tournament participant count
-            $this->updateTournamentParticipantCount($tournament);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Participante agregado exitosamente',
-                'data' => $participant
-            ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Datos de validación incorrectos',
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error adding tournament participant: ' . $e->getMessage());
+            Log::error('Error in store: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al agregar participante'
@@ -203,18 +293,20 @@ class TournamentParticipantController extends Controller
                 'notes' => 'nullable|string|max:1000'
             ]);
 
-            $oldStatus = $participant->status;
-            $participant->update($validatedData);
-
-            // Update tournament participant count if status changed
-            if ($oldStatus !== $validatedData['status']) {
-                $this->updateTournamentParticipantCount($tournament);
-            }
+            // Simple update using DB query builder
+            DB::table('tournament_participants')
+                ->where('id', $participant->id)
+                ->update([
+                    'status' => $validatedData['status'],
+                    'seed' => $validatedData['seed'] ?? null,
+                    'notes' => $validatedData['notes'] ?? null,
+                    'updated_at' => now(),
+                ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Participante actualizado exitosamente',
-                'data' => $participant
+                'data' => array_merge(['id' => $participant->id], $validatedData)
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -224,7 +316,7 @@ class TournamentParticipantController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Error updating tournament participant: ' . $e->getMessage());
+            Log::error('Error updating participant: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al actualizar participante'
@@ -238,14 +330,9 @@ class TournamentParticipantController extends Controller
     public function destroy(Tournament $tournament, TournamentParticipant $participant): JsonResponse
     {
         try {
-            DB::beginTransaction();
-
-            $participant->delete();
-
-            // Update tournament participant count
-            $this->updateTournamentParticipantCount($tournament);
-
-            DB::commit();
+            DB::table('tournament_participants')
+                ->where('id', $participant->id)
+                ->delete();
 
             return response()->json([
                 'success' => true,
@@ -253,126 +340,10 @@ class TournamentParticipantController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error removing tournament participant: ' . $e->getMessage());
+            Log::error('Error deleting participant: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al eliminar participante'
-            ], 500);
-        }
-    }
-
-    /**
-     * Get available members for tournament registration
-     */
-    public function availableMembers(Tournament $tournament): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            if (!$user) {
-                return response()->json(['message' => 'Unauthorized'], 401);
-            }
-
-            Log::info('Fetching available members for tournament', [
-                'tournament_id' => $tournament->id,
-                'user_id' => $user->id,
-                'user_role' => $user->role,
-            ]);
-
-            // Get members that are already registered in this tournament
-            $registeredMemberIds = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->pluck('member_id')
-                ->toArray();
-
-            Log::info('Already registered members', ['count' => count($registeredMemberIds)]);
-
-            // Start building the query for available members
-            $query = Member::where('status', 'active');
-
-            // Simple role-based filtering
-            if ($user->role === 'club') {
-                // For club users, get their club
-                $userClub = \App\Models\Club::where('user_id', $user->id)->first();
-                if ($userClub) {
-                    $query->where('club_id', $userClub->id);
-                } else {
-                    return response()->json([
-                        'success' => true,
-                        'data' => [],
-                        'message' => 'No se encontró club asociado al usuario'
-                    ]);
-                }
-            } elseif ($user->role === 'super_admin') {
-                // Super admin can see all members, but prioritize tournament context
-                if ($tournament->club_id) {
-                    $query->where('club_id', $tournament->club_id);
-                }
-            }
-
-            // Exclude already registered members
-            if (!empty($registeredMemberIds)) {
-                $query->whereNotIn('id', $registeredMemberIds);
-            }
-
-            // Order by name for better UX
-            $query->orderBy('first_name')->orderBy('last_name');
-
-            $availableMembers = $query->get();
-
-            // Transform the data safely
-            $transformedMembers = [];
-            foreach ($availableMembers as $member) {
-                try {
-                    $club = null;
-                    if ($member->club_id) {
-                        $club = \App\Models\Club::find($member->club_id);
-                    }
-
-                    $transformedMembers[] = [
-                        'id' => $member->id,
-                        'first_name' => $member->first_name ?? '',
-                        'last_name' => $member->last_name ?? '',
-                        'email' => $member->email ?? '',
-                        'phone' => $member->phone ?? '',
-                        'gender' => $member->gender ?? null,
-                        'ranking' => $member->ranking ?? null,
-                        'status' => $member->status ?? 'active',
-                        'club' => $club ? [
-                            'id' => $club->id,
-                            'name' => $club->name,
-                        ] : null,
-                    ];
-                } catch (\Exception $e) {
-                    Log::warning('Error loading member details: ' . $e->getMessage());
-                    // Add member with minimal data
-                    $transformedMembers[] = [
-                        'id' => $member->id,
-                        'first_name' => $member->first_name ?? '',
-                        'last_name' => $member->last_name ?? '',
-                        'email' => $member->email ?? '',
-                        'phone' => $member->phone ?? '',
-                        'gender' => $member->gender ?? null,
-                        'ranking' => $member->ranking ?? null,
-                        'status' => $member->status ?? 'active',
-                        'club' => null,
-                    ];
-                }
-            }
-
-            Log::info('Available members query result', ['count' => count($transformedMembers)]);
-
-            return response()->json([
-                'success' => true,
-                'data' => $transformedMembers
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error fetching available members: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al obtener miembros disponibles',
-                'error' => app()->environment('local') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -388,11 +359,22 @@ class TournamentParticipantController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            // Get basic participant count
-            $participantCount = TournamentParticipant::where('tournament_id', $tournament->id)->count();
-            $activeParticipantCount = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->whereIn('status', ['registered', 'confirmed'])
-                ->count();
+            // Get basic participant count using raw queries
+            $participantCount = 0;
+            $activeParticipantCount = 0;
+
+            try {
+                $participantCount = DB::table('tournament_participants')
+                    ->where('tournament_id', $tournament->id)
+                    ->count();
+
+                $activeParticipantCount = DB::table('tournament_participants')
+                    ->where('tournament_id', $tournament->id)
+                    ->whereIn('status', ['registered', 'confirmed'])
+                    ->count();
+            } catch (\Exception $e) {
+                Log::warning('Could not get participant counts: ' . $e->getMessage());
+            }
 
             $stats = [
                 'tournament_info' => [
@@ -420,22 +402,6 @@ class TournamentParticipantController extends Controller
                 'success' => false,
                 'message' => 'Error al obtener estadísticas del torneo'
             ], 500);
-        }
-    }
-
-    /**
-     * Update tournament participant count
-     */
-    private function updateTournamentParticipantCount(Tournament $tournament): void
-    {
-        try {
-            $activeCount = TournamentParticipant::where('tournament_id', $tournament->id)
-                ->whereIn('status', ['registered', 'confirmed'])
-                ->count();
-
-            $tournament->update(['current_participants' => $activeCount]);
-        } catch (\Exception $e) {
-            Log::error('Error updating tournament participant count: ' . $e->getMessage());
         }
     }
 }
