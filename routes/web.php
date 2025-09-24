@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\TournamentParticipantController;
+use App\Http\Controllers\MatchController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -23,3 +25,20 @@ Route::get('/debug-db', function () {
 Route::get('/sanctum/csrf-cookie', function () {
     return response()->json(['message' => 'CSRF cookie set']);
 })->middleware('web');
+
+// Add tournament routes without /api prefix for frontend compatibility
+// Removed 'cors' middleware alias as CORS is handled by HandleCors middleware in API routes
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::prefix('tournaments/{tournament}')->group(function () {
+        Route::get('/participants', [TournamentParticipantController::class, 'index']);
+        Route::post('/participants', [TournamentParticipantController::class, 'store']);
+        Route::get('/available-members', [TournamentParticipantController::class, 'availableMembers']);
+        Route::put('/participants/{participant}', [TournamentParticipantController::class, 'update']);
+        Route::delete('/participants/{participant}', [TournamentParticipantController::class, 'destroy']);
+        
+        Route::get('/matches', [MatchController::class, 'index']);
+        Route::get('/bracket', [MatchController::class, 'getBracket']);
+        Route::post('/generate-bracket', [MatchController::class, 'generateBracket']);
+        Route::put('/matches/{match}/result', [MatchController::class, 'updateResult']);
+    });
+});

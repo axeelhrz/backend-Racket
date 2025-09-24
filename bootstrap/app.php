@@ -12,19 +12,29 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Add CORS middleware to API routes
+        // Add CORS middleware to API routes, but remove EnsureFrontendRequestsAreStateful
+        // for token-based authentication
         $middleware->api(prepend: [
             \App\Http\Middleware\HandleCors::class,
+        ]);
+
+        // Only apply Sanctum's stateful middleware to web routes that need it
+        $middleware->web(append: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
+            'cors' => \App\Http\Middleware\HandleCors::class,
         ]);
 
-        // Disable CSRF validation for API routes - Sanctum handles this
+        // Disable CSRF validation for API routes - Sanctum handles this with tokens
         $middleware->validateCsrfTokens(except: [
             'api/*', // Disable Laravel's default CSRF for all API routes
+            'tournaments/*', // Also exclude tournament routes
+            'registro-rapido',
+            'registro-rapido/*',
+            'sanctum/csrf-cookie',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

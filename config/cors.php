@@ -15,7 +15,17 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'registro-rapido'],
+    'paths' => [
+        'api/*', 
+        'sanctum/csrf-cookie', 
+        'registro-rapido',
+        'tournaments/*',
+        'tournaments/*/participants',
+        'tournaments/*/available-members',
+        'tournaments/*/matches',
+        'tournaments/*/bracket',
+        'tournaments/*/generate-bracket'
+    ],
 
     'allowed_methods' => ['*'],
 

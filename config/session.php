@@ -169,7 +169,7 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE', true),
+    'secure' => env('SESSION_SECURE_COOKIE', false), // Set to false for local development
 
     /*
     |--------------------------------------------------------------------------
@@ -199,7 +199,7 @@ return [
     |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'none'),
+    'same_site' => env('SESSION_SAME_SITE', 'lax'), // Changed from 'none' to 'lax' for better compatibility
 
     /*
     |--------------------------------------------------------------------------

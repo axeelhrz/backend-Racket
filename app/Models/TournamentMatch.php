@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Match extends Model
+class TournamentMatch extends Model
 {
     use HasFactory;
+
+    protected $table = 'matches';
 
     protected $fillable = [
         'tournament_id',
@@ -83,12 +85,12 @@ class Match extends Model
      */
     public function nextMatch(): BelongsTo
     {
-        return $this->belongsTo(Match::class, 'next_match_id');
+        return $this->belongsTo(TournamentMatch::class, 'next_match_id');
     }
 
     public function previousMatches()
     {
-        return $this->hasMany(Match::class, 'next_match_id');
+        return $this->hasMany(TournamentMatch::class, 'next_match_id');
     }
 
     public function getStatusColorAttribute(): string

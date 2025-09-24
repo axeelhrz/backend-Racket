@@ -2,20 +2,28 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\TournamentMatch;
 use App\Models\Tournament;
 use App\Models\TournamentParticipant;
+use App\Models\Club;
+use App\Models\League;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class MatchController extends Controller
 {
+
+    /**
+     * Get all matches for a tournament
+     */
     public function index(Tournament $tournament): JsonResponse
     {
         try {
-            $matches = \App\Models\Match::with([
+            $matches = TournamentMatch::with([
                 'participant1.member',
                 'participant2.member',
                 'winner.member',
@@ -39,6 +47,9 @@ class MatchController extends Controller
         }
     }
 
+    /**
+     * Generate bracket for a tournament
+     */
     public function generateBracket(Tournament $tournament): JsonResponse
     {
         try {
@@ -53,7 +64,7 @@ class MatchController extends Controller
             }
 
             // Check if bracket already exists
-            $existingMatches = \App\Models\Match::where('tournament_id', $tournament->id)->count();
+            $existingMatches = TournamentMatch::where('tournament_id', $tournament->id)->count();
             if ($existingMatches > 0) {
                 return response()->json([
                     'success' => false,
@@ -76,22 +87,26 @@ class MatchController extends Controller
 
             DB::beginTransaction();
 
-            // Generate matches based on tournament format
-            $matches = $this->generateMatchesForFormat($tournament, $participants);
+            try {
+                // Generate matches based on tournament format
+                $matches = $this->generateMatchesForFormat($tournament, $participants);
 
-            // Update tournament status
-            $tournament->update(['status' => 'active']);
+                // Update tournament status
+                $tournament->update(['status' => 'active']);
 
-            DB::commit();
+                DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Bracket generado exitosamente',
-                'data' => $matches
-            ]);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Bracket generado exitosamente',
+                    'data' => $matches
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
 
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Error generating tournament bracket: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
@@ -100,7 +115,10 @@ class MatchController extends Controller
         }
     }
 
-    public function updateResult(Request $request, Tournament $tournament, \App\Models\Match $gameMatch): JsonResponse
+    /**
+     * Update match result
+     */
+    public function updateResult(Request $request, Tournament $tournament, TournamentMatch $match): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -122,7 +140,8 @@ class MatchController extends Controller
                 'referee' => 'nullable|string|max:255'
             ]);
 
-            if (!in_array($validatedData['winner_id'], [$gameMatch->participant1_id, $gameMatch->participant2_id])) {
+            // Validate winner is one of the participants
+            if (!in_array($validatedData['winner_id'], [$match->participant1_id, $match->participant2_id])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'El ganador debe ser uno de los participantes del partido'
@@ -131,46 +150,53 @@ class MatchController extends Controller
 
             DB::beginTransaction();
 
-            $gameMatch->update([
-                'winner_id' => $validatedData['winner_id'],
-                'score' => $validatedData['score'],
-                'sets_data' => $validatedData['sets_data'] ?? null,
-                'duration_minutes' => $validatedData['duration_minutes'] ?? null,
-                'notes' => $validatedData['notes'] ?? null,
-                'court_number' => $validatedData['court_number'] ?? null,
-                'referee' => $validatedData['referee'] ?? null,
-                'status' => 'completed',
-                'completed_at' => now()
-            ]);
+            try {
+                // Update match with result
+                $match->update([
+                    'winner_id' => $validatedData['winner_id'],
+                    'score' => $validatedData['score'],
+                    'sets_data' => $validatedData['sets_data'] ?? null,
+                    'duration_minutes' => $validatedData['duration_minutes'] ?? null,
+                    'notes' => $validatedData['notes'] ?? null,
+                    'court_number' => $validatedData['court_number'] ?? null,
+                    'referee' => $validatedData['referee'] ?? null,
+                    'status' => 'completed',
+                    'completed_at' => now()
+                ]);
 
-            $this->advanceWinner($gameMatch);
+                // Advance winner to next round
+                $this->advanceWinner($match);
 
-            $this->checkTournamentCompletion($tournament);
+                // Check if tournament is completed
+                $this->checkTournamentCompletion($tournament);
 
-            DB::commit();
+                DB::commit();
 
-            $gameMatch->load([
-                'participant1.member',
-                'participant2.member',
-                'winner.member',
-                'nextMatch'
-            ]);
+                // Load relationships for response
+                $match->load([
+                    'participant1.member',
+                    'participant2.member',
+                    'winner.member',
+                    'nextMatch'
+                ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Resultado actualizado exitosamente',
-                'data' => $gameMatch
-            ]);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Resultado actualizado exitosamente',
+                    'data' => $match
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
+        } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Datos de validación incorrectos',
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Error updating match result: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
@@ -179,10 +205,13 @@ class MatchController extends Controller
         }
     }
 
+    /**
+     * Get tournament bracket
+     */
     public function getBracket(Tournament $tournament): JsonResponse
     {
         try {
-            $matches = \App\Models\Match::with([
+            $matches = TournamentMatch::with([
                 'participant1.member',
                 'participant2.member',
                 'winner.member'
@@ -216,6 +245,9 @@ class MatchController extends Controller
         }
     }
 
+    /**
+     * Generate matches based on tournament format
+     */
     private function generateMatchesForFormat(Tournament $tournament, $participants)
     {
         switch ($tournament->tournament_format) {
@@ -230,13 +262,16 @@ class MatchController extends Controller
         }
     }
 
+    /**
+     * Generate single elimination bracket
+     */
     private function generateSingleEliminationMatches(Tournament $tournament, $participants)
     {
         $participantCount = $participants->count();
         $rounds = ceil(log($participantCount, 2));
         $totalSlots = pow(2, $rounds);
         
-        // Shuffle participants for random seeding (or use seed if available)
+        // Sort participants by seed (or shuffle for random seeding)
         $shuffledParticipants = $participants->sortBy('seed')->values();
         
         $matches = collect();
@@ -252,12 +287,12 @@ class MatchController extends Controller
                     $participant1 = $currentRoundParticipants->shift();
                     $participant2 = $currentRoundParticipants->shift();
                     
-                    $gameMatch = \App\Models\Match::create([
+                    $match = TournamentMatch::create([
                         'tournament_id' => $tournament->id,
                         'round' => $round,
                         'match_number' => $matchNum,
-                        'participant1_id' => $participant1?->id,
-                        'participant2_id' => $participant2?->id,
+                        'participant1_id' => $participant1 ? $participant1->id : null,
+                        'participant2_id' => $participant2 ? $participant2->id : null,
                         'status' => ($participant1 && $participant2) ? 'scheduled' : 'bye',
                         'bracket_position' => $matchNum,
                         'is_bye' => !($participant1 && $participant2)
@@ -265,7 +300,7 @@ class MatchController extends Controller
 
                     // Handle bye matches
                     if (!$participant2 && $participant1) {
-                        $gameMatch->update([
+                        $match->update([
                             'winner_id' => $participant1->id,
                             'status' => 'completed',
                             'score' => 'Bye',
@@ -273,7 +308,8 @@ class MatchController extends Controller
                         ]);
                     }
                 } else {
-                    $gameMatch = \App\Models\Match::create([
+                    // Subsequent rounds - create empty matches
+                    $match = TournamentMatch::create([
                         'tournament_id' => $tournament->id,
                         'round' => $round,
                         'match_number' => $matchNum,
@@ -282,19 +318,20 @@ class MatchController extends Controller
                     ]);
                 }
 
-                $roundMatches->push($gameMatch);
+                $roundMatches->push($match);
             }
 
+            // Link matches to next round
             if ($round < $rounds) {
                 $roundMatches->chunk(2)->each(function ($matchPair, $index) use ($round, $tournament) {
-                    $nextMatch = \App\Models\Match::where('tournament_id', $tournament->id)
+                    $nextMatch = TournamentMatch::where('tournament_id', $tournament->id)
                         ->where('round', $round + 1)
                         ->where('match_number', $index + 1)
                         ->first();
 
                     if ($nextMatch) {
-                        $matchPair->each(function ($gameMatch) use ($nextMatch) {
-                            $gameMatch->update(['next_match_id' => $nextMatch->id]);
+                        $matchPair->each(function ($match) use ($nextMatch) {
+                            $match->update(['next_match_id' => $nextMatch->id]);
                         });
                     }
                 });
@@ -306,15 +343,19 @@ class MatchController extends Controller
         return $matches;
     }
 
+    /**
+     * Generate round robin matches
+     */
     private function generateRoundRobinMatches(Tournament $tournament, $participants)
     {
         $matches = collect();
         $participantList = $participants->values();
         $matchNumber = 1;
 
+        // Create matches for every participant combination
         for ($i = 0; $i < $participantList->count(); $i++) {
             for ($j = $i + 1; $j < $participantList->count(); $j++) {
-                $gameMatch = \App\Models\Match::create([
+                $match = TournamentMatch::create([
                     'tournament_id' => $tournament->id,
                     'round' => 1,
                     'match_number' => $matchNumber,
@@ -324,7 +365,7 @@ class MatchController extends Controller
                     'bracket_position' => $matchNumber
                 ]);
 
-                $matches->push($gameMatch);
+                $matches->push($match);
                 $matchNumber++;
             }
         }
@@ -332,61 +373,82 @@ class MatchController extends Controller
         return $matches;
     }
 
+    /**
+     * Generate double elimination matches (simplified version)
+     */
     private function generateDoubleEliminationMatches(Tournament $tournament, $participants)
     {
+        // For now, use single elimination logic
+        // TODO: Implement proper double elimination bracket
         return $this->generateSingleEliminationMatches($tournament, $participants);
     }
 
-    private function advanceWinner(\App\Models\Match $gameMatch)
+    /**
+     * Advance winner to next match
+     */
+    private function advanceWinner(TournamentMatch $match)
     {
-        if (!$gameMatch->next_match_id || !$gameMatch->winner_id) {
+        if (!$match->next_match_id || !$match->winner_id) {
             return;
         }
 
-        $nextMatch = \App\Models\Match::find($gameMatch->next_match_id);
+        $nextMatch = TournamentMatch::find($match->next_match_id);
         if (!$nextMatch) {
             return;
         }
 
-        $previousMatches = \App\Models\Match::where('next_match_id', $nextMatch->id)->get();
-        $matchIndex = $previousMatches->search(function ($m) use ($gameMatch) {
-            return $m->id === $gameMatch->id;
+        // Find which position this match feeds into
+        $previousMatches = TournamentMatch::where('next_match_id', $nextMatch->id)->get();
+        $matchIndex = $previousMatches->search(function ($m) use ($match) {
+            return $m->id === $match->id;
         });
 
+        // Update next match with winner
         if ($matchIndex === 0) {
-            $nextMatch->update(['participant1_id' => $gameMatch->winner_id]);
+            $nextMatch->update(['participant1_id' => $match->winner_id]);
         } elseif ($matchIndex === 1) {
-            $nextMatch->update(['participant2_id' => $gameMatch->winner_id]);
+            $nextMatch->update(['participant2_id' => $match->winner_id]);
         }
     }
 
+    /**
+     * Check if tournament is completed
+     */
     private function checkTournamentCompletion(Tournament $tournament)
     {
-        $totalMatches = \App\Models\Match::where('tournament_id', $tournament->id)->count();
-        $completedMatches = \App\Models\Match::where('tournament_id', $tournament->id)
+        $totalMatches = TournamentMatch::where('tournament_id', $tournament->id)->count();
+        $completedMatches = TournamentMatch::where('tournament_id', $tournament->id)
             ->where('status', 'completed')
             ->count();
 
+        // Update tournament status if all matches are completed
         if ($totalMatches > 0 && $totalMatches === $completedMatches) {
             $tournament->update(['status' => 'completed']);
         }
 
+        // Update matches played count
         $tournament->update(['matches_played' => $completedMatches]);
     }
 
+    /**
+     * Check if user can manage tournament
+     */
     private function canManageTournament($user, Tournament $tournament): bool
     {
+        // Super admin can manage all tournaments
         if ($user->role === 'super_admin') {
             return true;
         }
 
+        // Club admin can manage their club's tournaments
         if ($user->role === 'club' && $tournament->club_id) {
-            $userClub = \App\Models\Club::where('user_id', $user->id)->first();
+            $userClub = Club::where('user_id', $user->id)->first();
             return $userClub && $userClub->id === $tournament->club_id;
         }
 
+        // League admin can manage their league's tournaments
         if ($user->role === 'liga' && $tournament->league_id) {
-            $userLeague = \App\Models\League::where('admin_id', $user->id)->first();
+            $userLeague = League::where('admin_id', $user->id)->first();
             return $userLeague && $userLeague->id === $tournament->league_id;
         }
 

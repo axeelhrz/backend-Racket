@@ -63,8 +63,9 @@ class TournamentController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            // Simplified validation rules focusing on required fields
+            // Comprehensive validation rules
             $rules = [
+                // Basic required fields
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
                 'start_date' => 'required|date',
@@ -72,7 +73,8 @@ class TournamentController extends Controller
                 'registration_deadline' => 'required|date|before:start_date',
                 'max_participants' => 'required|integer|min:2',
                 'tournament_type' => 'required|in:individual,team',
-                'status' => 'nullable|in:upcoming,active,completed,cancelled',
+                'tournament_format' => 'nullable|in:single_elimination,double_elimination,round_robin,swiss_system',
+                'status' => 'nullable|in:upcoming,active,completed,cancelled,draft,open,in_progress',
                 'club_id' => 'nullable|exists:clubs,id',
                 'league_id' => 'nullable|exists:leagues,id',
                 'sport_id' => 'nullable|exists:sports,id',
@@ -100,16 +102,44 @@ class TournamentController extends Controller
                 
                 // Individual tournament fields
                 'modality' => 'nullable|in:singles,doubles',
-                'match_type' => 'nullable|string',
-                'seeding_type' => 'nullable|string',
-                'min_ranking' => 'nullable|string',
-                'max_ranking' => 'nullable|string',
-                'reminder_days' => 'nullable|in:7,15',
+                'match_type' => 'nullable|string|max:50',
+                'seeding_type' => 'nullable|string|max:50',
+                'ranking_filter' => 'nullable|boolean',
+                'min_ranking' => 'nullable|string|max:50',
+                'max_ranking' => 'nullable|string|max:50',
+                'age_filter' => 'nullable|boolean',
+                'min_age' => 'nullable|integer|min:0|max:120',
+                'max_age' => 'nullable|integer|min:0|max:120',
+                'gender' => 'nullable|in:male,female,mixed',
+                'affects_ranking' => 'nullable|boolean',
+                'draw_lottery' => 'nullable|boolean',
+                'system_invitation' => 'nullable|boolean',
+                'scheduled_reminder' => 'nullable|boolean',
+                'reminder_days' => 'nullable|integer|in:7,15',
                 
                 // Team tournament fields
-                'team_size' => 'nullable|integer|min:1',
-                'min_age' => 'nullable|integer|min:0',
-                'max_age' => 'nullable|integer|min:0',
+                'team_modality' => 'nullable|string|max:50',
+                'team_match_type' => 'nullable|string|max:50',
+                'team_elimination_type' => 'nullable|string|max:50',
+                'players_per_team' => 'nullable|integer|min:1|max:20',
+                'max_ranking_between_players' => 'nullable|integer|min:0',
+                'categories' => 'nullable|array',
+                'categories.*' => 'string|max:100',
+                'number_of_teams' => 'nullable|integer|min:2|max:128',
+                'team_seeding_type' => 'nullable|string|max:50',
+                'team_ranking_filter' => 'nullable|boolean',
+                'team_min_ranking' => 'nullable|string|max:50',
+                'team_max_ranking' => 'nullable|string|max:50',
+                'team_age_filter' => 'nullable|boolean',
+                'team_min_age' => 'nullable|integer|min:0|max:120',
+                'team_max_age' => 'nullable|integer|min:0|max:120',
+                'team_gender' => 'nullable|in:male,female,mixed',
+                'team_affects_ranking' => 'nullable|boolean',
+                'team_draw_lottery' => 'nullable|boolean',
+                'team_system_invitation' => 'nullable|boolean',
+                'team_scheduled_reminder' => 'nullable|boolean',
+                'team_reminder_days' => 'nullable|integer|in:7,15',
+                'team_size' => 'nullable|integer|min:1|max:20',
                 'gender_restriction' => 'nullable|in:male,female,mixed',
                 'skill_level' => 'nullable|in:beginner,intermediate,advanced,professional',
                 
@@ -126,6 +156,10 @@ class TournamentController extends Controller
                 'ball_info' => 'nullable|string|max:1000',
                 'contact' => 'nullable|string|max:255',
                 'phone' => 'nullable|string|max:50',
+                
+                // Additional fields
+                'rules' => 'nullable|string',
+                'location' => 'nullable|string|max:500',
             ];
 
             $validatedData = $request->validate($rules);
@@ -175,9 +209,45 @@ class TournamentController extends Controller
                 $validatedData['sport_id'] = null;
             }
 
-            // Set tournament format based on type
-            if (!isset($validatedData['tournament_format'])) {
+            // Set tournament format based on type if not provided
+            if (!isset($validatedData['tournament_format']) || empty($validatedData['tournament_format'])) {
                 $validatedData['tournament_format'] = 'single_elimination';
+            }
+
+            // Convert boolean strings to actual booleans
+            $booleanFields = [
+                'ranking_filter', 'age_filter', 'affects_ranking', 'draw_lottery', 
+                'system_invitation', 'scheduled_reminder', 'team_ranking_filter', 
+                'team_age_filter', 'team_affects_ranking', 'team_draw_lottery', 
+                'team_system_invitation', 'team_scheduled_reminder'
+            ];
+
+            foreach ($booleanFields as $field) {
+                if (isset($validatedData[$field])) {
+                    $validatedData[$field] = filter_var($validatedData[$field], FILTER_VALIDATE_BOOLEAN);
+                }
+            }
+
+            // Handle age validation
+            if (isset($validatedData['min_age']) && isset($validatedData['max_age'])) {
+                if ($validatedData['min_age'] > $validatedData['max_age']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'La edad mínima no puede ser mayor que la edad máxima',
+                        'errors' => ['min_age' => ['La edad mínima no puede ser mayor que la edad máxima']]
+                    ], 422);
+                }
+            }
+
+            // Handle team age validation
+            if (isset($validatedData['team_min_age']) && isset($validatedData['team_max_age'])) {
+                if ($validatedData['team_min_age'] > $validatedData['team_max_age']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'La edad mínima del equipo no puede ser mayor que la edad máxima',
+                        'errors' => ['team_min_age' => ['La edad mínima del equipo no puede ser mayor que la edad máxima']]
+                    ], 422);
+                }
             }
 
             Log::info('Validated data before creation:', $validatedData);
@@ -250,7 +320,7 @@ class TournamentController extends Controller
                 }
             }
 
-            // Base validation rules
+            // Base validation rules for update (using sometimes)
             $rules = [
                 'name' => 'sometimes|required|string|max:255',
                 'description' => 'nullable|string',
@@ -259,7 +329,8 @@ class TournamentController extends Controller
                 'registration_deadline' => 'sometimes|required|date',
                 'max_participants' => 'sometimes|required|integer|min:2',
                 'tournament_type' => 'sometimes|required|in:individual,team',
-                'status' => 'sometimes|in:upcoming,active,completed,cancelled',
+                'tournament_format' => 'nullable|in:single_elimination,double_elimination,round_robin,swiss_system',
+                'status' => 'sometimes|in:upcoming,active,completed,cancelled,draft,open,in_progress',
                 'code' => [
                     'sometimes',
                     'required',
@@ -271,9 +342,52 @@ class TournamentController extends Controller
                         }
                     }
                 ],
+                
+                // All other fields as nullable for updates
+                'country' => 'nullable|string|max:255',
+                'province' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:255',
+                'club_name' => 'nullable|string|max:255',
+                'club_address' => 'nullable|string|max:500',
+                'modality' => 'nullable|in:singles,doubles',
+                'match_type' => 'nullable|string|max:50',
+                'seeding_type' => 'nullable|string|max:50',
+                'min_ranking' => 'nullable|string|max:50',
+                'max_ranking' => 'nullable|string|max:50',
+                'min_age' => 'nullable|integer|min:0|max:120',
+                'max_age' => 'nullable|integer|min:0|max:120',
+                'gender' => 'nullable|in:male,female,mixed',
+                'reminder_days' => 'nullable|integer|in:7,15',
+                'team_size' => 'nullable|integer|min:1|max:20',
+                'gender_restriction' => 'nullable|in:male,female,mixed',
+                'skill_level' => 'nullable|in:beginner,intermediate,advanced,professional',
+                'first_prize' => 'nullable|string|max:500',
+                'second_prize' => 'nullable|string|max:500',
+                'third_prize' => 'nullable|string|max:500',
+                'fourth_prize' => 'nullable|string|max:500',
+                'fifth_prize' => 'nullable|string|max:500',
+                'contact_name' => 'nullable|string|max:255',
+                'contact_phone' => 'nullable|string|max:50',
+                'ball_info' => 'nullable|string|max:1000',
+                'contact' => 'nullable|string|max:255',
+                'phone' => 'nullable|string|max:50',
             ];
 
             $validatedData = $request->validate($rules);
+
+            // Convert boolean strings to actual booleans for update
+            $booleanFields = [
+                'ranking_filter', 'age_filter', 'affects_ranking', 'draw_lottery', 
+                'system_invitation', 'scheduled_reminder', 'team_ranking_filter', 
+                'team_age_filter', 'team_affects_ranking', 'team_draw_lottery', 
+                'team_system_invitation', 'team_scheduled_reminder'
+            ];
+
+            foreach ($booleanFields as $field) {
+                if (isset($validatedData[$field])) {
+                    $validatedData[$field] = filter_var($validatedData[$field], FILTER_VALIDATE_BOOLEAN);
+                }
+            }
 
             $tournament->update($validatedData);
             $tournament->load(['club', 'league', 'sport']);

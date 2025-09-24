@@ -12,10 +12,12 @@ class Tournament extends Model
     use HasFactory;
 
     protected $fillable = [
+        // Basic tournament fields
         'name',
         'description',
-        'league_id',
-        'sport_id',
+        'code',
+        'tournament_type',
+        'tournament_format',
         'start_date',
         'end_date',
         'registration_deadline',
@@ -23,25 +25,117 @@ class Tournament extends Model
         'current_participants',
         'entry_fee',
         'prize_pool',
-        'tournament_format',
-        'location',
-        'rules',
         'status',
         'matches_played',
         'matches_total',
-        'club_id'
+        
+        // Location fields
+        'location',
+        'country',
+        'province',
+        'city',
+        'club_name',
+        'club_address',
+        'image',
+        
+        // Relationship fields
+        'league_id',
+        'sport_id',
+        'club_id',
+        
+        // Individual tournament fields
+        'modality',
+        'match_type',
+        'seeding_type',
+        'ranking_filter',
+        'min_ranking',
+        'max_ranking',
+        'age_filter',
+        'min_age',
+        'max_age',
+        'gender',
+        'affects_ranking',
+        'draw_lottery',
+        'system_invitation',
+        'scheduled_reminder',
+        'reminder_days',
+        
+        // Team tournament fields
+        'team_modality',
+        'team_match_type',
+        'team_elimination_type',
+        'players_per_team',
+        'max_ranking_between_players',
+        'categories',
+        'number_of_teams',
+        'team_seeding_type',
+        'team_ranking_filter',
+        'team_min_ranking',
+        'team_max_ranking',
+        'team_age_filter',
+        'team_min_age',
+        'team_max_age',
+        'team_gender',
+        'team_affects_ranking',
+        'team_draw_lottery',
+        'team_system_invitation',
+        'team_scheduled_reminder',
+        'team_reminder_days',
+        'team_size',
+        'gender_restriction',
+        'skill_level',
+        
+        // Prize fields
+        'first_prize',
+        'second_prize',
+        'third_prize',
+        'fourth_prize',
+        'fifth_prize',
+        
+        // Contact fields
+        'contact',
+        'phone',
+        'ball_info',
+        'contact_name',
+        'contact_phone',
+        
+        // Additional fields
+        'rules'
     ];
 
     protected $casts = [
-        'start_date' => 'date',
-        'end_date' => 'date',
-        'registration_deadline' => 'date',
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
+        'registration_deadline' => 'datetime',
         'entry_fee' => 'decimal:2',
         'prize_pool' => 'decimal:2',
         'current_participants' => 'integer',
         'max_participants' => 'integer',
         'matches_played' => 'integer',
-        'matches_total' => 'integer'
+        'matches_total' => 'integer',
+        'min_age' => 'integer',
+        'max_age' => 'integer',
+        'reminder_days' => 'integer',
+        'players_per_team' => 'integer',
+        'max_ranking_between_players' => 'integer',
+        'number_of_teams' => 'integer',
+        'team_min_age' => 'integer',
+        'team_max_age' => 'integer',
+        'team_reminder_days' => 'integer',
+        'team_size' => 'integer',
+        'categories' => 'array',
+        'ranking_filter' => 'boolean',
+        'age_filter' => 'boolean',
+        'affects_ranking' => 'boolean',
+        'draw_lottery' => 'boolean',
+        'system_invitation' => 'boolean',
+        'scheduled_reminder' => 'boolean',
+        'team_ranking_filter' => 'boolean',
+        'team_age_filter' => 'boolean',
+        'team_affects_ranking' => 'boolean',
+        'team_draw_lottery' => 'boolean',
+        'team_system_invitation' => 'boolean',
+        'team_scheduled_reminder' => 'boolean',
     ];
 
     /**
@@ -81,7 +175,7 @@ class Tournament extends Model
      */
     public function matches(): HasMany
     {
-        return $this->hasMany(Match::class);
+        return $this->hasMany(TournamentMatch::class);
     }
 
     /**
@@ -97,7 +191,7 @@ class Tournament extends Model
      */
     public function completedMatches(): HasMany
     {
-        return $this->hasMany(Match::class)->where('status', 'completed');
+        return $this->hasMany(TournamentMatch::class)->where('status', 'completed');
     }
 
     /**
@@ -105,7 +199,7 @@ class Tournament extends Model
      */
     public function pendingMatches(): HasMany
     {
-        return $this->hasMany(Match::class)->where('status', 'pending');
+        return $this->hasMany(TournamentMatch::class)->where('status', 'pending');
     }
 
     /**
@@ -129,13 +223,18 @@ class Tournament extends Model
      */
     public function getStatusColorAttribute()
     {
-        return match($this->status) {
-            'upcoming' => 'blue',
-            'active' => 'green',
-            'completed' => 'gray',
-            'cancelled' => 'red',
-            default => 'gray'
-        };
+        switch ($this->status) {
+            case 'upcoming':
+                return 'blue';
+            case 'active':
+                return 'green';
+            case 'completed':
+                return 'gray';
+            case 'cancelled':
+                return 'red';
+            default:
+                return 'gray';
+        }
     }
 
     /**
@@ -197,11 +296,11 @@ class Tournament extends Model
     {
         $lastCompletedRound = $this->matches()
             ->where('status', 'completed')
-            ->max('round_number') ?? 0;
+            ->max('round') ?? 0;
 
         $nextPendingRound = $this->matches()
             ->where('status', 'pending')
-            ->min('round_number') ?? ($lastCompletedRound + 1);
+            ->min('round') ?? ($lastCompletedRound + 1);
 
         return max($lastCompletedRound, $nextPendingRound);
     }
@@ -211,7 +310,7 @@ class Tournament extends Model
      */
     public function getTotalRounds(): int
     {
-        return $this->matches()->max('round_number') ?? 0;
+        return $this->matches()->max('round') ?? 0;
     }
 
     /**
@@ -261,7 +360,7 @@ class Tournament extends Model
         if (in_array($this->tournament_format, ['single_elimination', 'double_elimination'])) {
             $finalMatch = $this->matches()
                 ->where('status', 'completed')
-                ->orderBy('round_number', 'desc')
+                ->orderBy('round', 'desc')
                 ->first();
 
             return $finalMatch ? $finalMatch->winner : null;
@@ -302,13 +401,13 @@ class Tournament extends Model
             // Runner-up (2nd place) - loser of final match
             $finalMatch = $this->matches()
                 ->where('status', 'completed')
-                ->orderBy('round_number', 'desc')
+                ->orderBy('round', 'desc')
                 ->first();
 
             if ($finalMatch) {
-                $runnerId = $finalMatch->winner_id === $finalMatch->player1_id 
-                    ? $finalMatch->player2_id 
-                    : $finalMatch->player1_id;
+                $runnerId = $finalMatch->winner_id === $finalMatch->participant1_id 
+                    ? $finalMatch->participant2_id 
+                    : $finalMatch->participant1_id;
                 
                 if ($runnerId) {
                     $podium[2] = TournamentParticipant::find($runnerId);
@@ -318,14 +417,14 @@ class Tournament extends Model
             // Third place - losers of semi-finals
             $semiMatches = $this->matches()
                 ->where('status', 'completed')
-                ->where('round_number', $this->getTotalRounds() - 1)
+                ->where('round', $this->getTotalRounds() - 1)
                 ->get();
 
             $thirdPlaceCandidates = [];
             foreach ($semiMatches as $match) {
-                $loserId = $match->winner_id === $match->player1_id 
-                    ? $match->player2_id 
-                    : $match->player1_id;
+                $loserId = $match->winner_id === $match->participant1_id 
+                    ? $match->participant2_id 
+                    : $match->participant1_id;
                 
                 if ($loserId) {
                     $thirdPlaceCandidates[] = TournamentParticipant::find($loserId);
@@ -383,7 +482,7 @@ class Tournament extends Model
     /**
      * Cancel the tournament.
      */
-    public function cancel(string $reason = null): void
+    public function cancel(?string $reason = null): void
     {
         $this->update([
             'status' => 'cancelled'
